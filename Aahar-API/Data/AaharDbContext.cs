@@ -3,17 +3,45 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Aahar_API.Data
 {
+    /// <summary>
+    /// DB Context for Aahar.
+    /// </summary>
     public class AaharDbContext: DbContext
     {
+        /// <summary>
+        /// Aahar DB Context constructor.
+        /// </summary>
+        /// <param name="options"></param>
         public AaharDbContext(DbContextOptions<AaharDbContext> options) : base(options)
         {
         }
+
+        /// <summary>
+        /// Represents DB set for <see cref="User"/> table.
+        /// </summary>
         public DbSet<User> Users { get; set; }
+
+        /// <summary>
+        /// Represents DB set for <see cref="Table"/> table.
+        /// </summary>
         public DbSet<Table> DiningTables { get; set; }
+
+        /// <summary>
+        /// Represents DB set for <see cref="MenuItem"/> table.
+        /// </summary>
         public DbSet<MenuItem> MenuItems { get; set; }
+
+        /// <summary>
+        /// Represents DB set for <see cref="Order"/> table.
+        /// </summary>
         public DbSet<Order> Orders { get; set; }
+
+        /// <summary>
+        /// Represents DB set for <see cref="OrderItem"/> table.
+        /// </summary>
         public DbSet<OrderItem> OrderItems { get; set; }
 
+        /// <inheritdoc/>
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<User>()
