@@ -7,13 +7,11 @@ namespace Aahar_API.Repository.Implementations
     /// <inheritdoc/>
     public class BaseRepository<T> : IBaseRepository<T> where T : class, IWithId
     {
-        private readonly DbContext _context;
         private readonly DbSet<T> _dbSet;
 
         /// <inheritdoc/>
         public BaseRepository(DbContext context)
         {
-            _context = context;
             _dbSet = context.Set<T>();
         }
 
