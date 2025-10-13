@@ -1,0 +1,8 @@
+# .editorconfig for enforcing XML comments in Models folder
+root = false
+
+# This section applies to all C# files inside this directory
+[*.cs]
+
+# Enforce that public members must have XML documentation
+dotnet_diagnostic.CS1591.severity = error
