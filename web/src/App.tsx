@@ -1,0 +1,189 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import {
+  ArrowLeft, ArrowRight, BookOpen, ChefHat, ChevronDown,
+  CircleHelp, ClipboardList, Clock3, Coffee, Grid2X2, LayoutDashboard, LogOut,
+  Minus, Package, Plus, Search, ShoppingBag, Sparkles, Store, UtensilsCrossed, X,
+} from 'lucide-react'
+import { api, ApiError } from './api'
+import type { MenuItem, Order, Table, User } from './api'
+import { demoMenu, demoOrders, demoTables } from './demo'
+import { Inventory, MenuEditor, SalesReport, TableEditor } from './Management'
+import './App.css'
+
+type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest'
+type Cart = Record<number, number>
+
+const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
+const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+const navigation: { id: Page; label: string; icon: typeof Grid2X2 }[] = [
+  { id: 'pos', label: 'Point of sale', icon: Grid2X2 },
+  { id: 'tables', label: 'Tables', icon: LayoutDashboard },
+  { id: 'kitchen', label: 'Kitchen', icon: ChefHat },
+  { id: 'menu', label: 'Menu', icon: BookOpen },
+  { id: 'inventory', label: 'Inventory', icon: Package },
+  { id: 'reports', label: 'Reports', icon: ClipboardList },
+]
+
+function Brand({ light = false }: { light?: boolean }) {
+  return <div className={`brand ${light ? 'brand-light' : ''}`}><span className="brand-mark"><UtensilsCrossed size={19} strokeWidth={1.8} /></span><span>aahar<span className="brand-dot">.</span><small>RESTAURANT WORKSPACE</small></span></div>
+}
+
+function SignIn({ onLogin, onDemo }: { onLogin: (user: User) => void; onDemo: () => void }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try { onLogin(await api.login(username, password)) } catch (e) { setError(message(e)) } finally { setBusy(false) }
+  }
+  return <main className="login-layout">
+    <section className="login-story"><Brand light /><div className="story-copy"><span className="eyebrow light-eyebrow">MADE FOR THE WAY YOU SERVE</span><h1>Good food deserves<br /><em>good flow.</em></h1><p>A calmer way to manage the moving parts of your restaurant, from the first order to the last table.</p><div className="story-rule" /><span className="story-foot"><span>01 / 03</span> &nbsp; A LITTLE MORE ROOM TO HOSPITABLY HOST</span></div><div className="story-illustration" aria-hidden="true"><div className="plate plate-one" /><div className="plate plate-two" /><div className="plate plate-three" /><span>THE ART OF<br />GOOD SERVICE</span></div><div className="story-bottom">A thoughtful workspace for restaurants <span>EST. FOR EVERY DAY</span></div></section>
+    <section className="login-panel"><div className="login-inner"><span className="eyebrow">WELCOME TO AAHAR</span><h2>Welcome back.</h2><p>Sign in to pick up where you left off.</p><form onSubmit={submit}><label>Username<input autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required placeholder="Enter your username" /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Enter your password" /></label>{error && <div className="alert" role="alert">{error}</div>}<button className="button primary wide" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={17} /></button></form><div className="login-divider"><span>OR TAKE A LOOK AROUND</span></div><button className="button secondary wide" onClick={onDemo}>Explore sample workspace <ArrowRight size={17} /></button><p className="login-note">Sample mode uses temporary example data. No changes are sent to the server.</p></div><div className="login-footer">© Aahar <span>MADE FOR BETTER SERVICE</span></div></section>
+  </main>
+}
+
+function App() {
+  const guestParam = new URLSearchParams(window.location.search).get('guest')
+  const guestPath = guestParam !== null
+  const sampleGuest = guestParam === 'sample'
+  const [user, setUser] = useState<User | null>(null)
+  const [checking, setChecking] = useState(!guestPath)
+  const [demo, setDemo] = useState(false)
+  const [page, setPage] = useState<Page>(guestPath ? 'guest' : 'pos')
+  const [menu, setMenu] = useState<MenuItem[]>(sampleGuest ? demoMenu : [])
+  const [tables, setTables] = useState<Table[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [cart, setCart] = useState<Cart>({})
+  const [tableId, setTableId] = useState<number | null>(null)
+  const [category, setCategory] = useState('All items')
+  const [search, setSearch] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (guestPath) return
+    api.me().then(setUser).catch((e: unknown) => {
+      if (!(e instanceof ApiError && e.status === 401)) setError(message(e))
+    }).finally(() => setChecking(false))
+  }, [guestPath])
+
+  const refresh = useCallback(async () => {
+    if (demo || sampleGuest || (!user && !guestPath)) return
+    setLoading(true); setError('')
+    try {
+      if (guestPath) setMenu(await api.guestMenu())
+      else {
+        const [menuResult, tableResult, orderResult] = await Promise.allSettled([api.menu(), api.tables(), api.orders()])
+        const failures: string[] = []
+        if (menuResult.status === 'fulfilled') setMenu(menuResult.value)
+        else failures.push(`Menu: ${message(menuResult.reason)}`)
+        if (tableResult.status === 'fulfilled') setTables(tableResult.value)
+        else failures.push(`Tables: ${message(tableResult.reason)}`)
+        if (orderResult.status === 'fulfilled') setOrders(orderResult.value)
+        else failures.push(`Orders: ${message(orderResult.reason)}`)
+        if (failures.length) setError(failures.join(' '))
+      }
+    } catch (e) { setError(message(e)) } finally { setLoading(false) }
+  }, [demo, user, guestPath, sampleGuest])
+  useEffect(() => { void refresh() }, [refresh])
+
+  function startDemo() {
+    setDemo(true); setUser({ username: 'Sample user', role: 'Demo' }); setMenu(demoMenu); setTables(demoTables); setOrders(demoOrders); setError('')
+  }
+  async function signOut() {
+    if (!demo) {
+      try { await api.logout() } catch (e) { setError(message(e)); return }
+    }
+    setUser(null); setDemo(false); setMenu([]); setTables([]); setOrders([]); setCart({}); setPage('pos')
+  }
+  const categories = useMemo(() => ['All items', ...new Set(menu.map(item => item.category).filter((value): value is string => !!value))], [menu])
+  const visibleMenu = menu.filter(item => item.isAvailable && (category === 'All items' || item.category === category) && `${item.name} ${item.description ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+  const cartItems = menu.filter(item => cart[item.id] > 0)
+  const total = cartItems.reduce((sum, item) => sum + item.price * cart[item.id], 0)
+  const itemCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0)
+  function changeQuantity(id: number, amount: number) {
+    setCart(current => {
+      const next = { ...current, [id]: Math.max(0, (current[id] ?? 0) + amount) }
+      if (next[id] === 0) delete next[id]
+      return next
+    })
+  }
+  async function createOrder() {
+    if (!itemCount || tableId === null) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const items = cartItems.map(item => ({ menuItemId: item.id, quantity: cart[item.id] }))
+      if (demo) {
+        const order: Order = { id: Math.max(100, ...orders.map(o => o.id)) + 1, tableId, status: 'Draft', createdAt: new Date().toISOString(), items: cartItems.map(item => ({ menuItemId: item.id, name: item.name, quantity: cart[item.id], unitPrice: item.price })), total }
+        setOrders(current => [order, ...current])
+      } else {
+        await api.createOrder(tableId, items)
+      }
+      setCart({}); setTableId(null); setNotice('Order created. Open Kitchen to send it for preparation.')
+      if (!demo) await refresh()
+    } catch (e) { setError(message(e)) } finally { setBusy(false) }
+  }
+  async function updateOrder(order: Order, action: 'send' | 'complete' | 'pay') {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      if (demo) setOrders(current => current.map(item => item.id === order.id ? { ...item, status: action === 'send' ? 'Sent' : action === 'complete' ? 'Completed' : 'Paid' } : item))
+      else {
+        if (action === 'send') await api.sendOrder(order.id)
+        if (action === 'complete') await api.completeOrder(order.id)
+        if (action === 'pay') await api.payOrder(order.id, 'Cash')
+        await refresh()
+      }
+      setNotice(action === 'pay' ? 'Payment recorded as a simulation; no money was collected.' : 'Order updated.')
+    } catch (e) { setError(message(e)) } finally { setBusy(false) }
+  }
+
+  if (checking) return <div className="full-message">Opening Aahar…</div>
+  if (!user && !guestPath) return <><SignIn onLogin={setUser} onDemo={startDemo} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
+  if (guestPath) return <GuestMenu menu={menu} loading={loading} error={error} retry={refresh} sample={sampleGuest} />
+
+  const title = navigation.find(item => item.id === page)?.label ?? 'Guest menu'
+  const canManage = !demo && ['admin', 'manager'].includes(user?.role.toLowerCase() ?? '')
+  const canServe = demo || ['admin', 'manager', 'staff'].includes(user?.role.toLowerCase() ?? '')
+  const canComplete = demo || ['admin', 'manager', 'kitchen'].includes(user?.role.toLowerCase() ?? '')
+  return <div className="app-shell">
+    <aside className="sidebar"><Brand /><div className="workspace-label">WORKSPACE</div><nav aria-label="Main navigation">{navigation.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => { setPage(id); setNotice('') }} aria-current={page === id ? 'page' : undefined}><Icon size={18} strokeWidth={1.7} />{label}{page === id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><Sparkles size={16} /></span><strong>Made for service.</strong><p>A little more ease in every shift.</p></div><button className="nav-item guest-link" onClick={() => setPage('guest')}><Store size={18} /> Guest menu <ArrowRight size={15} /></button><button className="profile" onClick={signOut}><span className="avatar">{user?.username.slice(0, 1).toUpperCase()}</span><span><strong>{user?.username}</strong><small>{demo ? 'Sample workspace' : user?.role}</small></span><LogOut size={17} /></button></div></aside>
+    <main className="main"><header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <strong>{title}</strong></div><div className="top-actions">{demo && <span className="demo-badge">SAMPLE MODE</span>}<span className="today"><span className="online-dot" /> {demo ? 'Example data' : 'Restaurant workspace'}</span><button className="icon-button" aria-label="About this workspace" onClick={() => setNotice('Aahar is a restaurant workspace. Payments are simulated and receipts are not IRD compliant.')}><CircleHelp size={19} /></button></div></header>
+      <div className="content">
+        {error && <div className="alert global-alert" role="alert"><span>{error}</span><button onClick={() => void refresh()}>Retry</button><button aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button></div>}
+        {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')}><X size={16} /></button></div>}
+        {loading && <div className="loading" role="status">Loading workspace…</div>}
+        {page === 'pos' && <><div className="page-heading"><div><div className="eyebrow">YOUR SERVICE, IN ONE PLACE</div><h1>Point of sale<span className="heading-dot">.</span></h1><p>Let’s get something good to the table.</p></div><div className="shift-label"><span className="shift-icon"><Clock3 size={17} /></span><span><small>CURRENT WORKSPACE</small><strong>{demo ? 'Sample service' : 'Restaurant service'}</strong></span></div></div>
+          <div className="pos-layout"><section className="menu-panel"><div className="section-heading"><div><span className="eyebrow">THE MENU</span><h2>What are we serving?</h2></div><span className="count-label">{visibleMenu.length} items</span></div><div className="menu-tools"><div className="categories" aria-label="Menu categories">{categories.map(c => <button key={c} className={category === c ? 'selected' : ''} onClick={() => setCategory(c)}>{c}</button>)}</div><label className="search"><Search size={17} /><span className="sr-only">Search menu</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search menu..." /></label></div>
+            <div className="item-grid">{visibleMenu.map((item, index) => <button className="menu-card" key={item.id} onClick={() => changeQuantity(item.id, 1)}><div className={`item-art art-${index % 4}`} aria-hidden="true"><span>{item.name.slice(0, 1)}</span><i /><b /></div><div className="item-details"><div className="item-category">{item.category || 'FROM THE MENU'}</div><strong>{item.name}</strong><p>{item.description || 'Made fresh to order'}</p><div className="item-bottom"><span>{money(item.price)}</span><span className="add-circle" aria-label={`Add ${item.name}`}><Plus size={16} /></span></div></div></button>)}</div>{!loading && !visibleMenu.length && <Empty title="Nothing on the menu yet" text={search || category !== 'All items' ? 'Try another search or category.' : 'Available menu items will appear here.'} />}</section>
+            <aside className="order-panel"><div className="order-head"><div><span className="eyebrow">CURRENT ORDER</span><h2>Order details</h2></div><span className="order-icon"><ShoppingBag size={18} /></span></div><div className="order-type"><span><span className="type-icon"><UtensilsCrossed size={16} /></span> Dine in</span><label><span className="sr-only">Select table</span><select value={tableId ?? ''} onChange={e => setTableId(e.target.value ? Number(e.target.value) : null)}><option value="">Select table</option>{tables.map(table => <option key={table.id} value={table.id}>{table.number}</option>)}</select><ChevronDown size={14} /></label></div><div className="order-lines">{cartItems.length ? cartItems.map(item => <div className="order-line" key={item.id}><div><strong>{item.name}</strong><small>{money(item.price)} each</small></div><div className="line-right"><strong>{money(item.price * cart[item.id])}</strong><div className="stepper"><button onClick={() => changeQuantity(item.id, -1)} aria-label={`Remove one ${item.name}`}><Minus size={13} /></button><span>{cart[item.id]}</span><button onClick={() => changeQuantity(item.id, 1)} aria-label={`Add one ${item.name}`}><Plus size={13} /></button></div></div></div>) : <div className="empty-order"><span><ShoppingBag size={22} strokeWidth={1.4} /></span><strong>A fresh start</strong><p>Choose an item from the menu<br />to begin an order.</p></div>}</div><div className="order-footer"><div className="summary-line"><span>Items</span><span>{itemCount}</span></div><div className="summary-line total-line"><strong>Total</strong><strong>{money(total)}</strong></div><p className="tax-note">Final totals are determined by the server.</p><button className="button primary wide" disabled={!itemCount || tableId === null || busy || !canServe} onClick={() => void createOrder()}>{busy ? 'Creating order…' : 'Create order'} <ArrowRight size={17} /></button><p className="order-hint">{!canServe ? 'Your role cannot create orders.' : tableId === null ? 'Select a table to create an order.' : 'Review your order before sending it to the kitchen.'}</p></div></aside></div></>}
+        {page === 'tables' && <><PageHeading eyebrow="THE FLOOR" title="Tables" text="A clear view of your dining room." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">FLOOR OVERVIEW</span><h2>Your tables</h2></div><span className="count-label">{tables.length} tables</span></div>{canManage && <TableEditor refresh={refresh} />}<div className="table-grid">{tables.map(table => { const active = orders.some(o => o.tableId === table.id && !['paid', 'cancelled'].includes(o.status.toLowerCase())); return <button key={table.id} className="table-card" onClick={() => { setTableId(table.id); setPage('pos') }}><div className="table-card-top"><span className="table-symbol"><Grid2X2 size={20} /></span><span className={`status ${active ? 'status-busy' : ''}`}>{active ? 'Active order' : 'No active order'}</span></div><strong>Table {table.number}</strong><small>{table.capacity} seats</small><span className="table-action">Start an order <ArrowRight size={14} /></span></button> })}</div>{!loading && !tables.length && <Empty title="No tables found" text="Tables will appear here when available." />}</div></>}
+        {page === 'kitchen' && <><PageHeading eyebrow="KEEP THINGS MOVING" title="Kitchen" text="Orders and their progress, at a glance." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">ORDER QUEUE</span><h2>On the pass</h2></div><span className="count-label">{orders.length} orders</span></div><div className="ticket-grid">{orders.map(order => <article className="ticket" key={order.id}><div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{tables.find(t => t.id === order.tableId) ? `Table ${tables.find(t => t.id === order.tableId)?.number}` : 'Unassigned table'}</h3></div><span className="status status-busy">{order.status}</span></div><div className="ticket-items">{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.unitPrice)}</span></div>)}</div><div className="ticket-bottom"><span>{money(order.total)}</span><div className="ticket-actions">{canServe && order.status.toLowerCase() === 'draft' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'send')}>Send to kitchen</button>}{canComplete && order.status.toLowerCase() === 'sent' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'complete')}>Mark complete</button>}{canServe && order.status.toLowerCase() === 'completed' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'pay')}>Simulate cash payment</button>}</div></div></article>)}</div>{!loading && !orders.length && <Empty title="All caught up" text="New orders will show up here." />}</div></>}
+        {page === 'menu' && <><PageHeading eyebrow="FOOD & DRINK" title="Your menu" text="Everything you’re serving, in one place." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">MENU CATALOGUE</span><h2>All menu items</h2></div><span className="count-label">{menu.length} items</span></div>{canManage && <MenuEditor items={menu} refresh={refresh} />}<div className="list-table"><div className="list-header"><span>ITEM</span><span>AVAILABILITY</span><span>PRICE</span></div>{menu.map(item => <div className="list-row" key={item.id}><span><strong>{item.name}</strong><small>{item.description || item.category || 'Menu item'}</small></span><span><span className={`status ${item.isAvailable ? '' : 'status-busy'}`}>{item.isAvailable ? 'Available' : 'Unavailable'}</span></span><strong>{money(item.price)}</strong></div>)}</div>{!loading && !menu.length && <Empty title="No menu items found" text="Your menu will appear here when available." />}</div></>}
+        {(page === 'inventory' || page === 'reports') && !canManage && <><PageHeading eyebrow={page === 'inventory' ? 'STOCK & SUPPLIES' : 'THE BIG PICTURE'} title={page === 'inventory' ? 'Inventory' : 'Reports'} text={page === 'inventory' ? 'Stay on top of what your kitchen needs.' : 'Make sense of your service.'} /><div className="surface placeholder"><span className="placeholder-icon">{page === 'inventory' ? <Package size={25} /> : <ClipboardList size={25} />}</span><span className="eyebrow">ACCESS & AVAILABILITY</span><h2>{demo ? 'Not available in sample mode.' : 'Manager access required.'}</h2><p>{demo ? 'Sample mode does not connect to inventory or sales data.' : 'Inventory and sales data are available to managers and administrators.'}</p></div></>}
+        {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory /></>}
+        {page === 'reports' && canManage && <><PageHeading eyebrow="THE BIG PICTURE" title="Reports" text="Make sense of your service." /><SalesReport /></>}
+        {page === 'guest' && <><PageHeading eyebrow="SHARE WHAT’S GOOD" title="Guest menu" text="A simple, read-only view of your menu." /><div className="surface guest-preview"><div><span className="eyebrow">GUEST EXPERIENCE</span><h2>Let the menu do the talking.</h2><p>Open the guest menu on this computer. A localhost link cannot be used by guests on other devices.</p><a className="button primary" href={demo ? '?guest=sample' : '?guest'} target="_blank" rel="noreferrer">Open guest menu <ArrowRight size={16} /></a></div><div className="guest-preview-art"><Coffee size={40} strokeWidth={1.2} /><span>GOOD FOOD.<br />GOOD COMPANY.</span></div></div></>}
+      </div>
+    </main>
+    <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? 'active' : ''} onClick={() => setPage(id)} aria-label={label} aria-current={page === id ? 'page' : undefined}><Icon size={19} /><span>{label === 'Point of sale' ? 'POS' : label}</span></button>)}<button onClick={() => setPage('guest')} aria-label="Guest menu"><Store size={19} /><span>Guest</span></button><button onClick={signOut} aria-label="Sign out"><LogOut size={19} /><span>Exit</span></button></nav>
+  </div>
+}
+
+function PageHeading({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
+  return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}<span className="heading-dot">.</span></h1><p>{text}</p></div></div>
+}
+function Empty({ title, text }: { title: string; text: string }) {
+  return <div className="empty-state"><strong>{title}</strong><p>{text}</p></div>
+}
+function GuestMenu({ menu, loading, error, retry, sample }: { menu: MenuItem[]; loading: boolean; error: string; retry: () => Promise<void>; sample: boolean }) {
+  const available = menu.filter(item => item.isAvailable)
+  const groups = [...new Set(available.map(item => item.category || 'Our menu'))]
+  return <main className="guest-page"><header><Brand /><a href={window.location.pathname}><ArrowLeft size={16} /> Staff sign in</a></header><div className="guest-hero"><span className="eyebrow">{sample ? 'SAMPLE MENU · EXAMPLE DATA' : 'PULL UP A CHAIR'}</span><h1>Good food,<br /><em>good company.</em></h1><p>Take your time. There’s something here for everyone.</p><span className="guest-ornament"><UtensilsCrossed size={35} strokeWidth={1.1} /></span></div><div className="guest-content"><div className="section-heading"><div><span className="eyebrow">FRESHLY PREPARED</span><h2>Explore the menu</h2></div><span className="count-label">{available.length} items</span></div>{error && <div className="alert" role="alert">{error} <button onClick={() => void retry()}>Retry</button></div>}{loading && <p role="status">Loading menu…</p>}{groups.map(group => <section key={group} className="guest-group"><h3>{group}</h3>{available.filter(item => (item.category || 'Our menu') === group).map(item => <div className="guest-row" key={item.id}><div><strong>{item.name}</strong><p>{item.description}</p></div><strong>{money(item.price)}</strong></div>)}</section>)}{!loading && !available.length && !error && <Empty title="The menu is being prepared" text="Please check back soon." />}</div><footer><Brand /><span>GOOD FOOD IS BETTER TOGETHER</span></footer></main>
+}
+
+export default App
