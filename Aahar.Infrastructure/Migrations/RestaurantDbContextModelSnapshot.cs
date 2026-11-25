@@ -122,6 +122,24 @@ namespace Aahar.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("CancellationStockDisposition")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CancelledBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ConsumptionMovementCount")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -135,7 +153,10 @@ namespace Aahar.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TableId");
+                    b.HasIndex("TableId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Orders_ActiveTable")
+                        .HasFilter("\"Status\" IN ('Draft', 'Sent', 'Completed')");
 
                     b.ToTable("Orders");
                 });
@@ -232,6 +253,57 @@ namespace Aahar.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Aahar.Domain.StockMovement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
+                    b.Property<int>("IngredientId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("QuantityChange")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IngredientId", "Id");
+
+                    b.HasIndex("OrderId", "IngredientId", "Kind")
+                        .IsUnique()
+                        .HasFilter("\"OrderId\" IS NOT NULL");
+
+                    b.ToTable("StockMovements", t =>
+                        {
+                            t.HasCheckConstraint("CK_StockMovements_Balance", "\"BalanceAfter\" >= 0");
+
+                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Aahar.Domain.User", b =>
                 {
                     b.Property<int>("Id")
@@ -320,6 +392,24 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Ingredient");
 
                     b.Navigation("MenuItem");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.StockMovement", b =>
+                {
+                    b.HasOne("Aahar.Domain.Ingredient", "Ingredient")
+                        .WithMany()
+                        .HasForeignKey("IngredientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Aahar.Domain.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Ingredient");
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Aahar.Domain.MenuItem", b =>

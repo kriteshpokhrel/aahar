@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Aahar.Application;
 using Aahar.Domain;
+using Aahar.Infrastructure;
 using Mapster;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.EntityFrameworkCore;
 
 namespace Aahar.Tests;
 
@@ -35,15 +37,83 @@ public class BackendTests
             new RecipeIngredient { MenuItemId = 2, IngredientId = 1, Ingredient = rice, Quantity = 1m },
             new RecipeIngredient { MenuItemId = 2, IngredientId = 2, Ingredient = salt, Quantity = 0.1m }
         };
-        Assert.Throws<DomainException>(() => OrderRules.DeductStock(order, recipe));
+        Assert.Throws<DomainException>(() => OrderRules.DeductStock(order, recipe, "staff"));
         Assert.Equal(10m, rice.Stock);
         Assert.Equal(0.1m, salt.Stock);
         salt.Stock = 0.3m;
-        OrderRules.DeductStock(order, recipe);
+        var movements = OrderRules.DeductStock(order, recipe, "staff");
         Assert.Equal(3m, rice.Stock);
         Assert.Equal(0m, salt.Stock);
+        Assert.Equal(2, order.ConsumptionMovementCount);
+        Assert.Contains(movements, x => x.IngredientId == 1 && x.QuantityChange == -7m && x.BalanceAfter == 3m && x.Actor == "staff");
     }
 
+    [Fact]
+    public void CancellationReversesRecordedDeductionsOnceAndRequiresAuthorization()
+    {
+        var rice = new Ingredient { Id = 1, Name = "Rice", Stock = 3m };
+        var order = new Order { Id = 17, Status = "Sent", ConsumptionMovementCount = 1 };
+        var consumed = new[] { new StockMovement { IngredientId = 1, Ingredient = rice, OrderId = 17, Kind = "Consumption", QuantityChange = -7m } };
+        Assert.Throws<ForbiddenException>(() => OrderRules.Cancel(order, consumed, "mistake", "Return", "waiter", "Staff"));
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, consumed, " ", "Return", "manager", "Manager"));
+        Assert.Equal(3m, rice.Stock);
+        var reversal = Assert.Single(OrderRules.Cancel(order, consumed, " mistake ", "Return", "manager", "Manager"));
+        Assert.Equal(10m, rice.Stock);
+        Assert.Equal(7m, reversal.QuantityChange);
+        Assert.Equal("Cancellation", reversal.Kind);
+        Assert.Equal("manager", reversal.Actor);
+        Assert.Equal("mistake", order.CancellationReason);
+        Assert.Equal("Return", order.CancellationStockDisposition);
+        Assert.NotNull(order.CancelledAt);
+        Assert.Equal("Cancelled", order.Status);
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, consumed, "retry", "Return", "manager", "Manager"));
+        Assert.Equal(10m, rice.Stock);
+    }
+
+    [Fact]
+    public void CancellationRejectsMissingLedgerAndOverflowWithoutChangingStock()
+    {
+        var rice = new Ingredient { Id = 1, Name = "Rice", Stock = 99999999999.999m };
+        var order = new Order { Id = 5, Status = "Completed", ConsumptionMovementCount = 1 };
+        var consumed = new[] { new StockMovement { IngredientId = 1, Ingredient = rice, OrderId = 5, Kind = "Consumption", QuantityChange = -1m } };
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, [], "reason", "Return", "admin", "Admin"));
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, consumed, "reason", "Return", "admin", "Admin"));
+        Assert.Equal(99999999999.999m, rice.Stock);
+        Assert.Equal("Completed", order.Status);
+        order.ConsumptionMovementCount = null;
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, [], "reason", "Waste", "admin", "Admin"));
+        order.Status = "Paid";
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, [], "reason", "Waste", "admin", "Admin"));
+        order.Status = "Draft";
+        Assert.Empty(OrderRules.Cancel(order, [], "reason", "None", "staff", "Staff"));
+        Assert.Equal("Cancelled", order.Status);
+    }
+
+    [Fact]
+    public void WasteCancellationPreservesStockAndRequiresExplicitDisposition()
+    {
+        var rice = new Ingredient { Id = 1, Name = "Rice", Stock = 3m };
+        var order = new Order { Id = 5, Status = "Completed", ConsumptionMovementCount = 1 };
+        var consumed = new[] { new StockMovement { IngredientId = 1, Ingredient = rice, OrderId = 5, Kind = "Consumption", QuantityChange = -7m } };
+        Assert.Throws<DomainException>(() => OrderRules.Cancel(order, consumed, "reason", "None", "admin", "Admin"));
+        Assert.Equal(3m, rice.Stock);
+        Assert.Empty(OrderRules.Cancel(order, consumed, "spoiled", "Waste", "admin", "Admin"));
+        Assert.Equal(3m, rice.Stock);
+        Assert.Equal("Waste", order.CancellationStockDisposition);
+    }
+
+    [Fact]
+    public void ModelHasUniqueActiveTableAndOrderMovementConstraints()
+    {
+        var options = new DbContextOptionsBuilder<RestaurantDbContext>().UseNpgsql("Host=localhost;Database=not_used;Username=unused;Password=unused").Options;
+        using var db = new RestaurantDbContext(options);
+        var index = db.Model.FindEntityType(typeof(Order))!.GetIndexes().Single(x => x.GetDatabaseName() == "IX_Orders_ActiveTable");
+        Assert.True(index.IsUnique);
+        Assert.Equal("\"Status\" IN ('Draft', 'Sent', 'Completed')", index.GetFilter());
+        var movements = db.Model.FindEntityType(typeof(StockMovement))!.GetIndexes().Single(x => x.Properties.Select(p => p.Name).SequenceEqual(["OrderId", "IngredientId", "Kind"]));
+        Assert.True(movements.IsUnique);
+        Assert.Equal("\"OrderId\" IS NOT NULL", movements.GetFilter());
+    }
     [Fact]
     public void MapsterPreservesSnapshotFields()
     {
@@ -51,6 +121,8 @@ public class BackendTests
         var dto = line.Adapt<OrderItemDto>();
         Assert.Equal(new OrderItemDto(4, "Momo", 2, 120.5m), dto);
         Assert.Equal(new UserDto("admin", "Admin"), new User { Username = "admin", Role = "Admin" }.Adapt<UserDto>());
+        var movement = new StockMovement { Id = 7, IngredientId = 4, OrderId = 3, Kind = "Consumption", QuantityChange = -2m, BalanceAfter = 8m, Actor = "staff" };
+        Assert.Equal(new StockMovementDto(7, 4, 3, "Consumption", -2m, 8m, "staff", movement.OccurredAt), movement.Adapt<StockMovementDto>());
     }
 
     [Fact]
@@ -88,6 +160,26 @@ public class BackendTests
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/orders")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/ingredients")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/orders", new CreateOrderRequest(1, [new(1, 1)]))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/orders/1/cancel", new CancelOrderRequest("mistake", "None"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task StaffMayCancelDraftButNotSubmittedOrder()
+    {
+        await using var factory = new TestFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var token = (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken;
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/login", new LoginRequest("staff", "password"))).StatusCode);
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        token = (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken;
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token);
+        var response = await client.PostAsJsonAsync("/api/orders/1/cancel", new CancelOrderRequest("mistake", "None"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var cancelled = await response.Content.ReadFromJsonAsync<OrderDto>();
+        Assert.Equal("staff", cancelled!.CancelledBy);
+        Assert.Equal("None", cancelled.CancellationStockDisposition);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/orders/2/cancel", new CancelOrderRequest("mistake", "Return"))).StatusCode);
     }
     private record Csrf(string RequestToken);
 }
@@ -119,19 +211,28 @@ public sealed class FakeService : IRestaurantService
 {
     public Task<UserDto?> AuthenticateAsync(LoginRequest r, CancellationToken ct) => Task.FromResult<UserDto?>(
         r.Password == "password" && r.Username == "admin" ? new("admin", "Admin") :
-        r.Password == "password" && r.Username == "kitchen" ? new("kitchen", "Kitchen") : null);
+        r.Password == "password" && r.Username == "kitchen" ? new("kitchen", "Kitchen") :
+        r.Password == "password" && r.Username == "staff" ? new("staff", "Staff") : null);
     public Task<UserDto> CreateUserAsync(CreateUserRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<MenuDto>> MenuAsync(bool a, CancellationToken ct) => throw new NotSupportedException();
     public Task<MenuDto> SaveMenuAsync(int? id, MenuRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<TableDto>> TablesAsync(CancellationToken ct) => throw new NotSupportedException();
     public Task<TableDto> CreateTableAsync(TableRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<IngredientDto>> IngredientsAsync(CancellationToken ct) => throw new NotSupportedException();
-    public Task<IngredientDto> CreateIngredientAsync(IngredientRequest r, CancellationToken ct) => throw new NotSupportedException();
-    public Task<IngredientDto> AddStockAsync(int id, StockRequest r, CancellationToken ct) => throw new NotSupportedException();
+    public Task<IngredientDto> CreateIngredientAsync(IngredientRequest r, string actor, CancellationToken ct) => throw new NotSupportedException();
+    public Task<IngredientDto> AddStockAsync(int id, StockRequest r, string actor, CancellationToken ct) => throw new NotSupportedException();
+    public Task<IReadOnlyList<StockMovementDto>> StockMovementsAsync(int id, long? beforeId, int limit, CancellationToken ct) => throw new NotSupportedException();
+    public Task<RecipeRequest> RecipeAsync(int id, CancellationToken ct) => throw new NotSupportedException();
     public Task SetRecipeAsync(int id, RecipeRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<OrderDto>> OrdersAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<OrderDto>>([]);
     public Task<OrderDto> CreateOrderAsync(CreateOrderRequest r, CancellationToken ct) => throw new NotSupportedException();
-    public Task<OrderDto> SendOrderAsync(int id, CancellationToken ct) => throw new NotSupportedException();
+    public Task<OrderDto> SendOrderAsync(int id, string actor, CancellationToken ct) => throw new NotSupportedException();
+    public Task<OrderDto> CancelOrderAsync(int id, CancelOrderRequest r, string actor, string role, CancellationToken ct)
+    {
+        var order = new Order { Id = id, Status = id == 1 ? "Draft" : "Sent", ConsumptionMovementCount = id == 1 ? null : 0 };
+        OrderRules.Cancel(order, [], r.Reason, r.StockDisposition, actor, role);
+        return Task.FromResult(new OrderDto(id, 1, order.Status, order.CreatedAt, [], 0, null, order.CancelledAt, order.CancelledBy, order.CancellationReason, order.CancellationStockDisposition));
+    }
     public Task<OrderDto> CompleteOrderAsync(int id, CancellationToken ct) => throw new NotSupportedException();
     public Task<OrderDto> PayAsync(int id, PaymentRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<SalesDto> SalesAsync(CancellationToken ct) => throw new NotSupportedException();

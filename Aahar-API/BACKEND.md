@@ -4,7 +4,9 @@ Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Cor
 
 ## Setup
 
-No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review `Aahar.Infrastructure/Migrations/*_InitialPostgres.cs` and the generated SQL before applying it. `Down` drops tables and is destructive. Do not apply it to an existing database or run rollback commands without an explicit decision and backup.
+No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review both migrations in `Aahar.Infrastructure/Migrations` and the generated SQL before applying them. The initial migration's `Down` drops tables; the ledger migration refuses rollback because it would destroy history. Do not apply changes to any database or run rollback commands without explicit approval and a backup.
+
+When upgrading an already-provisioned dedicated Aahar database, stop all old application instances and inspect it first. The follow-up migration refuses to proceed if multiple Draft, Sent, or Completed orders share a table; reconcile those orders manually with an operator before retrying. It records each existing ingredient's current stock as an opening balance, not a reconstruction of past movements. Submitted orders from before the ledger cannot be cancelled automatically, even as waste, because their actual deductions are unknown. Handle them through a documented manual operational process; do not guess a stock adjustment.
 
 With .NET 10 installed and a dedicated database already created by its owner, configure a connection string privately (do not enter passwords in chat or commit them). For example, in a local bash terminal, prompt without echo and avoid putting the value in shell history:
 
@@ -13,7 +15,7 @@ read -r -s -p 'Dedicated PostgreSQL connection string: ' ConnectionStrings__Aaha
 export ConnectionStrings__Aahar
 dotnet restore Aahar-API.slnx
 dotnet tool install --global dotnet-ef --version 10.0.0
-dotnet ef migrations script --project Aahar.Infrastructure --startup-project Aahar.Infrastructure --context RestaurantDbContext --output aahar-initial.sql
+dotnet ef migrations script --project Aahar.Infrastructure --startup-project Aahar.Infrastructure --context RestaurantDbContext --output aahar-migrations.sql
 ```
 
 Inspect the SQL and verify the target independently. **Only after explicitly approving the migration of that dedicated database**, apply it:
@@ -47,20 +49,27 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 | `GET /api/guest/menu` | Available menu items | Anonymous |
 | `GET /api/menu` | All menu items: `{id,name,description,category,price,isAvailable}` | Authenticated |
 | `POST /api/menu`, `PUT /api/menu/{id}` | `{name,description,category,price,isAvailable}`; returns item | Admin, Manager |
-| `GET /api/tables` | `{id,number,capacity}[]` | Authenticated |
+| `GET /api/tables` | `{id,number,capacity,isOccupied}[]` | Authenticated |
 | `POST /api/tables` | `{number,capacity}`; returns table | Admin, Manager |
 | `GET /api/ingredients` | `{id,name,unit,stock}[]` | Admin, Manager |
 | `POST /api/ingredients` | `{name,unit,stock}`; returns ingredient | Admin, Manager |
 | `POST /api/ingredients/{id}/stock` | `{quantity}` positive receipt; returns ingredient | Admin, Manager |
+| `GET /api/ingredients/{id}/movements?beforeId=&limit=` | Newest-first stock movements; limit 1–100, default 50; use the last ID as `beforeId` for the next page | Admin, Manager |
+| `GET /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` | Admin, Manager |
 | `PUT /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` replaces recipe; 204 | Admin, Manager |
 | `GET /api/orders` | Orders, newest first | Authenticated |
 | `POST /api/orders` | `{tableId,items:[{menuItemId,quantity}]}`; returns order | Admin, Manager, Staff |
 | `POST /api/orders/{id}/send` | Draft to Sent; returns order | Admin, Manager, Staff |
 | `POST /api/orders/{id}/complete` | Sent to Completed; returns order | Admin, Manager, Kitchen |
+| `POST /api/orders/{id}/cancel` | `{reason,stockDisposition}`; returns order | Admin, Manager, Staff for Draft; Admin, Manager for Sent/Completed |
 | `POST /api/orders/{id}/payments` | `{method:"Cash"}` or `{method:"Card"}`; Completed to Paid; returns order | Admin, Manager, Staff |
 | `GET /api/sales` | `{ordersPaid,total}` over all recorded payments | Admin, Manager |
 
-An order is `{id,tableId,status,createdAt,items:[{menuItemId,name,quantity,unitPrice}],total,payment}`; `payment` is null or `{id,method,amount,paidAt}`. Prices and names are captured at order creation. Sending uses the recipe configured at **send time**. No recipe means no stock deduction for that item. Configured ingredients are aggregated and checked before any deduction. Stock, send, completion, recipe changes, and payment use serializable transactions; concurrent conflicts must be retried after refreshing. A unique payment per order, state transitions, and nonnegative stock constraints provide additional safeguards.
+An order is `{id,tableId,status,createdAt,items:[{menuItemId,name,quantity,unitPrice}],total,payment,cancelledAt,cancelledBy,cancellationReason,cancellationStockDisposition}`; `payment` is null or `{id,method,amount,paidAt}`, and cancellation fields are null until cancellation. Prices and names are captured at order creation. A table is occupied while its order is Draft, Sent, or Completed; a concurrent second active order for the same table is rejected with 409. Payment or cancellation releases the table.
+
+Sending uses the recipe configured at **send time**. No recipe means no stock deduction for that item. Configured ingredients are aggregated and checked before any deduction. Stock, send, cancellation, completion, recipe changes, and payment use serializable transactions; concurrent conflicts must be retried after refreshing. A unique payment per order, unique active order per table, state transitions, movement uniqueness, and nonnegative stock constraints provide additional safeguards.
+
+Cancellation requires a nonblank reason (at most 300 characters). Draft uses `stockDisposition:"None"`; submitted orders require `stockDisposition:"Return"` or `"Waste"`. Return restores the exact recorded deductions, even if recipes have changed, and must only be selected when the ingredients are physically reusable. Waste leaves the deduction in place. A cancelled order cannot be cancelled again, and a paid order cannot be cancelled. Reason, actor, time, and disposition remain on the order. The stock ledger records opening balances, receipts, consumption, and returns as `{id,ingredientId,orderId,kind,quantityChange,balanceAfter,actor,occurredAt}`; orderId is null for opening and receipt. Waste is recorded on the cancelled order, not as a stock change.
 
 Payments are **simulated only**; this is **not IRD certified** and is not suitable for real fiscal invoicing.
 
@@ -68,4 +77,4 @@ Payments are **simulated only**; this is **not IRD certified** and is not suitab
 
 `dotnet test Aahar.Tests/Aahar.Tests.csproj` runs isolated domain/mapping and HTTP cookie, CSRF, and role tests without a PostgreSQL connection. Before operational use, run end-to-end migration, transaction/concurrency, and recovery tests against a separately provisioned disposable database with explicit approval. The included tests do not verify PostgreSQL concurrency or migrations against a live server.
 
-This is an intentionally incomplete portfolio foundation: no order editing/cancellation/refunds, table occupancy, stock ledger, recipe read endpoint, user management beyond creation, password reset/revocation, reporting filters, backups, audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.
+This is an intentionally incomplete portfolio foundation: no order editing or refunds, user management beyond creation, password reset/revocation, reporting filters, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.

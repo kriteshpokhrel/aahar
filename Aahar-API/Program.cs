@@ -90,6 +90,10 @@ app.Use(async (context, next) =>
     {
         await Results.Problem(statusCode: 400, title: "Invalid request", detail: ex.Message).ExecuteAsync(context);
     }
+    catch (ForbiddenException)
+    {
+        await Results.Problem(statusCode: 403, title: "Forbidden").ExecuteAsync(context);
+    }
     catch (Exception ex) when (ex is DbUpdateException { InnerException: PostgresException { SqlState: "23505" or "40001" or "40P01" } }
         or PostgresException { SqlState: "40001" or "40P01" })
     {
@@ -130,13 +134,16 @@ api.MapPut("/menu/{id:int}", (int id, MenuRequest r, IRestaurantService s, Cance
 api.MapGet("/tables", (IRestaurantService s, CancellationToken ct) => s.TablesAsync(ct));
 api.MapPost("/tables", (TableRequest r, IRestaurantService s, CancellationToken ct) => s.CreateTableAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/ingredients", (IRestaurantService s, CancellationToken ct) => s.IngredientsAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
-api.MapPost("/ingredients", (IngredientRequest r, IRestaurantService s, CancellationToken ct) => s.CreateIngredientAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
-api.MapPost("/ingredients/{id:int}/stock", (int id, StockRequest r, IRestaurantService s, CancellationToken ct) => s.AddStockAsync(id, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPost("/ingredients", (IngredientRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.CreateIngredientAsync(r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPost("/ingredients/{id:int}/stock", (int id, StockRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.AddStockAsync(id, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/ingredients/{id:int}/movements", (int id, long? beforeId, int? limit, IRestaurantService s, CancellationToken ct) => s.StockMovementsAsync(id, beforeId, limit ?? 50, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/menu/{id:int}/recipe", (int id, IRestaurantService s, CancellationToken ct) => s.RecipeAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapPut("/menu/{id:int}/recipe", async (int id, RecipeRequest r, IRestaurantService s, CancellationToken ct) => { await s.SetRecipeAsync(id, r, ct); return Results.NoContent(); }).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/orders", (IRestaurantService s, CancellationToken ct) => s.OrdersAsync(ct));
 api.MapPost("/orders", (CreateOrderRequest r, IRestaurantService s, CancellationToken ct) => s.CreateOrderAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
-api.MapPost("/orders/{id:int}/send", (int id, IRestaurantService s, CancellationToken ct) => s.SendOrderAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
+api.MapPost("/orders/{id:int}/send", (int id, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.SendOrderAsync(id, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/orders/{id:int}/complete", (int id, IRestaurantService s, CancellationToken ct) => s.CompleteOrderAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
+api.MapPost("/orders/{id:int}/cancel", (int id, CancelOrderRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.CancelOrderAsync(id, r, user.Identity!.Name!, user.FindFirstValue(ClaimTypes.Role)!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/orders/{id:int}/payments", (int id, PaymentRequest r, IRestaurantService s, CancellationToken ct) => s.PayAsync(id, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapGet("/sales", (IRestaurantService s, CancellationToken ct) => s.SalesAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 app.Run();

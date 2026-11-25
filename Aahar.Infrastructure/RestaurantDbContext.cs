@@ -9,6 +9,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<MenuItem> MenuItems => Set<MenuItem>();
     public DbSet<DiningTable> Tables => Set<DiningTable>();
     public DbSet<Ingredient> Ingredients => Set<Ingredient>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<RecipeIngredient> Recipes => Set<RecipeIngredient>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -29,12 +30,29 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         b.Entity<Ingredient>().Property(x => x.Unit).HasMaxLength(30);
         b.Entity<Ingredient>().Property(x => x.Stock).HasPrecision(14, 3);
         b.Entity<Ingredient>().ToTable(t => t.HasCheckConstraint("CK_Ingredients_Stock", "\"Stock\" >= 0"));
+        b.Entity<StockMovement>().Property(x => x.Kind).HasMaxLength(20);
+        b.Entity<StockMovement>().Property(x => x.Actor).HasMaxLength(100);
+        b.Entity<StockMovement>().Property(x => x.QuantityChange).HasPrecision(14, 3);
+        b.Entity<StockMovement>().Property(x => x.BalanceAfter).HasPrecision(14, 3);
+        b.Entity<StockMovement>().HasOne(x => x.Ingredient).WithMany().HasForeignKey(x => x.IngredientId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<StockMovement>().HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<StockMovement>().HasIndex(x => new { x.OrderId, x.IngredientId, x.Kind }).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
+        b.Entity<StockMovement>().HasIndex(x => new { x.IngredientId, x.Id });
+        b.Entity<StockMovement>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_StockMovements_Balance", "\"BalanceAfter\" >= 0");
+            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL)");
+        });
         b.Entity<RecipeIngredient>().HasKey(x => new { x.MenuItemId, x.IngredientId });
         b.Entity<RecipeIngredient>().Property(x => x.Quantity).HasPrecision(14, 3);
         b.Entity<RecipeIngredient>().ToTable(t => t.HasCheckConstraint("CK_Recipes_Quantity", "\"Quantity\" > 0"));
         b.Entity<RecipeIngredient>().HasOne(x => x.MenuItem).WithMany(x => x.Recipe).HasForeignKey(x => x.MenuItemId);
         b.Entity<RecipeIngredient>().HasOne(x => x.Ingredient).WithMany().HasForeignKey(x => x.IngredientId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<Order>().Property(x => x.Status).HasMaxLength(20);
+        b.Entity<Order>().Property(x => x.CancelledBy).HasMaxLength(100);
+        b.Entity<Order>().Property(x => x.CancellationReason).HasMaxLength(300);
+        b.Entity<Order>().Property(x => x.CancellationStockDisposition).HasMaxLength(20);
+        b.Entity<Order>().HasIndex(x => x.TableId).IsUnique().HasFilter("\"Status\" IN ('Draft', 'Sent', 'Completed')").HasDatabaseName("IX_Orders_ActiveTable");
         b.Entity<Order>().HasOne(x => x.Table).WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<OrderItem>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<OrderItem>().Property(x => x.UnitPrice).HasPrecision(12, 2);
