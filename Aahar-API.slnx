@@ -1,3 +1,7 @@
 <Solution>
   <Project Path="Aahar-API/Aahar-API.csproj" />
+  <Project Path="Aahar.Application/Aahar.Application.csproj" />
+  <Project Path="Aahar.Domain/Aahar.Domain.csproj" />
+  <Project Path="Aahar.Infrastructure/Aahar.Infrastructure.csproj" />
+  <Project Path="Aahar.Tests/Aahar.Tests.csproj" />
 </Solution>

@@ -1,36 +1,12 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-
+<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-	  <TargetFramework>net9.0</TargetFramework>
-	  <Nullable>enable</Nullable>
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  <RootNamespace>Aahar_API</RootNamespace>
-	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.9" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.9" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.9" />
+    <Compile Remove="Data/**;Models/**;Repository/**" />
+    <ProjectReference Include="../Aahar.Application/Aahar.Application.csproj" />
+    <ProjectReference Include="../Aahar.Infrastructure/Aahar.Infrastructure.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Helpers\" />
-    <Folder Include="Services\" />
-    <Folder Include="REST\Controllers\" />
-    <Folder Include="REST\DataTransferObjects\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EditorConfigFiles Remove="C:\Users\krite\source\repos\Aahar-API\Aahar-API\Models\.editorconfig" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EditorConfigFiles Remove="C:\Users\krite\source\repos\Aahar-API\Aahar-API\Models\.editorconfig" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="C:\Users\krite\source\repos\Aahar-API\Aahar-API\Models\.editorconfig" />
-  </ItemGroup>
-
 </Project>

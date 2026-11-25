@@ -1,6 +1,9 @@
-@Aahar_API_HostAddress = http://localhost:5156
+@host = https://localhost:7041
 
-GET {{Aahar_API_HostAddress}}/weatherforecast/
+GET {{host}}/api/guest/menu
 Accept: application/json
 
 ###
+
+GET {{host}}/api/auth/csrf
+Accept: application/json
