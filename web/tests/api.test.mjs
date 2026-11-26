@@ -191,3 +191,26 @@ test('inventory history uses cursor pagination and receipt detail endpoint', asy
     assert.ok(calls.every(call => call.options.credentials === 'same-origin'))
   } finally { globalThis.fetch = originalFetch }
 })
+
+test('recipe read and replacement preserve ingredient quantities and surface conflicts', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'recipe-token' })
+    if (!options.method) return Response.json({ ingredients: [{ ingredientId: 4, quantity: 0.125 }] })
+    if (JSON.parse(options.body).ingredients.length === 0) return new Response(null, { status: 204 })
+    return Response.json({ detail: 'Recipe changed' }, { status: 409 })
+  }
+  try {
+    assert.deepEqual(await api.recipe(3), { ingredients: [{ ingredientId: 4, quantity: 0.125 }] })
+    await api.saveRecipe(3, [])
+    await assert.rejects(api.saveRecipe(3, [{ ingredientId: 4, quantity: 0.125 }]), error => error instanceof ApiError && error.status === 409 && error.message === 'Recipe changed')
+    const mutations = calls.filter(call => call.options.method === 'PUT')
+    assert.deepEqual(mutations.map(call => [call.url, JSON.parse(call.options.body)]), [
+      ['/api/menu/3/recipe', { ingredients: [] }],
+      ['/api/menu/3/recipe', { ingredients: [{ ingredientId: 4, quantity: 0.125 }] }],
+    ])
+    assert.ok(mutations.every(call => call.options.headers.get('X-CSRF-TOKEN')))
+  } finally { globalThis.fetch = originalFetch }
+})

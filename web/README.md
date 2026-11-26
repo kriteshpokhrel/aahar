@@ -29,4 +29,8 @@ The manager reports use an inclusive business-date range of at most 366 days. Th
 
 Managers can view low stock, change thresholds, record stock and waste, browse movement and threshold histories, manage suppliers and their change history, and record and browse purchase receipts. Quantities use the ingredient's exact unit; receipt totals and snapshots come from the server. Supplier references are case-sensitive and unique per supplier. If recording a receipt has an uncertain outcome, check receipt history and with staff before trying again; the API does not provide idempotent retry. The warning is kept only in the current page session and is lost on reload.
 
-Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Recipe management, staff administration and QR generation are not implemented in the frontend. Guest menu links on localhost work only on the same computer.
+Managers can edit the ingredient quantities used per menu item in Manage recipes. Saving replaces the whole recipe; reload before saving when other managers may be editing. Stock is deducted using the recipe at order send time; an empty recipe causes no deduction.
+
+The guest menu QR is generated locally and encodes the same selected takeaway or table link; it does not contact a QR service. A localhost link or QR works only on the same computer, not on another device. Do not expose the development proxy to remote devices.
+
+Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Staff administration is not implemented in the frontend.

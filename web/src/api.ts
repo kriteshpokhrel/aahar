@@ -46,6 +46,7 @@ export type ReportWindow = { fromDate: string; toDate: string; timeZone: string;
 export type PaidSalesReport = ReportWindow & { ordersPaid: number; total: number }
 export type BestSellingReport = ReportWindow & { items: { menuItemId: number; name: string; unitPrice: number; quantity: number; revenue: number }[] }
 export type MenuInput = { name: string; description: string | null; category: string; price: number; isAvailable: boolean }
+export type RecipeLine = { ingredientId: number; quantity: number }
 export type GuestStatus = 'Pending' | 'Accepted' | 'Rejected'
 export type GuestQuoteLine = OrderLine & { quotedUnitPrice: number }
 export type GuestRequest = {
@@ -135,6 +136,8 @@ export const api = {
     post<Order>(`/orders/${id}/cancel`, { reason, stockDisposition }),
   createMenuItem: (item: MenuInput) => post<MenuItem>('/menu', item),
   updateMenuItem: (id: number, item: MenuInput) => request<MenuItem>(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(item) }),
+  recipe: (id: number) => request<{ ingredients: RecipeLine[] }>(`/menu/${id}/recipe`),
+  saveRecipe: (id: number, ingredients: RecipeLine[]) => put<void>(`/menu/${id}/recipe`, { ingredients }),
   createTable: (number: number, capacity: number) => post<Table>('/tables', { number, capacity }),
   ingredients: () => request<Ingredient[]>('/ingredients'),
   lowStock: () => request<Ingredient[]>('/ingredients/low-stock'),
