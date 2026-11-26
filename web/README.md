@@ -21,4 +21,6 @@ The client expects cookie authentication and `GET /api/auth/csrf` to return a re
 
 The POS, tables, kitchen, menu catalogue, inventory, sales overview and read-only guest menu use the API. Table availability comes from the server; order conflicts are reported rather than silently retried. Staff can cancel draft orders; managers and administrators can also cancel submitted orders and must choose whether to return stock or mark it as waste. Menu and table creation, menu edits, inventory adjustments and sales are available to managers and administrators.
 
+Orders can be dine-in or takeaway. Draft items and kitchen notes can be edited before sending; sent orders produce kitchen tickets that progress through queued, preparing and ready before order completion. Reconstructed tickets are flagged: verify the actual kitchen state before acting, as their timestamps reflect order creation. Refresh the kitchen view to see other operators' changes.
+
 Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Recipe management, staff administration, stock ledger browsing and QR generation are not implemented in the frontend. Guest menu links on localhost work only on the same computer.

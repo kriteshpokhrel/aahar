@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Order, PaymentMethod, StockDisposition, Table } from './api'
+import type { KitchenTicket, MenuItem, Order, OrderLine, PaymentMethod, StockDisposition, Table } from './api'
+import { DraftEditor } from './DraftEditor'
 
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
 
-export function OrderTicket({ order, tables, busy, canServe, canComplete, canCancelSubmitted, update, cancel }: {
+export function OrderTicket({ order, ticket, menu, tables, busy, canServe, canComplete, canCancelSubmitted, update, cancel, saveDraft }: {
   order: Order
+  ticket: KitchenTicket | undefined
+  menu: MenuItem[]
   tables: Table[]
   busy: boolean
   canServe: boolean
@@ -13,11 +16,13 @@ export function OrderTicket({ order, tables, busy, canServe, canComplete, canCan
   canCancelSubmitted: boolean
   update: (order: Order, action: 'send' | 'complete' | 'pay', method?: PaymentMethod) => Promise<void>
   cancel: (order: Order, reason: string, stockDisposition: StockDisposition) => Promise<boolean>
+  saveDraft: (order: Order, items: OrderLine[]) => Promise<boolean>
 }) {
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [disposition, setDisposition] = useState<'' | 'Return' | 'Waste'>('')
+  const [editing, setEditing] = useState(false)
   const status = order.status.toLowerCase()
   const table = tables.find(item => item.id === order.tableId)
   const canCancel = (status === 'draft' && canServe) || (['sent', 'completed'].includes(status) && canCancelSubmitted)
@@ -30,15 +35,17 @@ export function OrderTicket({ order, tables, busy, canServe, canComplete, canCan
     if (succeeded) { setCancelOpen(false); setReason(''); setDisposition('') }
   }
   return <article className="ticket">
-    <div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{table ? `Table ${table.number}` : `Table #${order.tableId}`}</h3></div><span className="status status-busy">{order.status}</span></div>
-    <div className="ticket-items">{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.unitPrice)}</span></div>)}</div>
+    <div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{order.tableId === null ? 'Takeaway' : table ? `Table ${table.number}` : `Table #${order.tableId}`}</h3></div><span className="status status-busy">{order.status}</span></div>
+    <div className="ticket-items">{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span><b>{item.quantity}×</b> {item.name}{item.notes && <small className="ticket-note">Note: {item.notes}</small>}</span><span>{money(item.quantity * item.unitPrice)}</span></div>)}</div>
     <div className="ticket-bottom"><span>{money(order.total)}</span><div className="ticket-actions">
-      {canServe && status === 'draft' && <button className="button small secondary" disabled={busy} onClick={() => void update(order, 'send')}>Send to kitchen</button>}
-      {canComplete && status === 'sent' && <button className="button small secondary" disabled={busy} onClick={() => void update(order, 'complete')}>Mark complete</button>}
+      {canServe && status === 'draft' && <button className="button small secondary" disabled={busy || editing} onClick={() => void update(order, 'send')}>Send to kitchen</button>}
+      {canServe && status === 'draft' && <button className="button small secondary" disabled={busy} aria-expanded={editing} onClick={() => setEditing(!editing)}>Edit draft</button>}
+      {canComplete && status === 'sent' && ticket?.status.toLowerCase() === 'ready' && <button className="button small secondary" disabled={busy} onClick={() => void update(order, 'complete')}>Mark complete</button>}
       {canServe && status === 'completed' && <div className="payment-actions"><button className="button small secondary" disabled={busy} onClick={() => void update(order, 'pay', 'Cash')}>Simulate cash</button><button className="button small secondary" disabled={busy} onClick={() => void update(order, 'pay', 'Card')}>Simulate card</button></div>}
       {status === 'paid' && order.payment && <button className="button small secondary" aria-expanded={receiptOpen} onClick={() => setReceiptOpen(!receiptOpen)}>{receiptOpen ? 'Hide receipt' : 'View receipt'}</button>}
-      {canCancel && <button className="button small secondary cancel-toggle" disabled={busy} aria-expanded={cancelOpen} onClick={() => setCancelOpen(!cancelOpen)}>{cancelOpen ? 'Keep order' : 'Cancel order'}</button>}
+      {canCancel && <button className="button small secondary cancel-toggle" disabled={busy || editing} aria-expanded={cancelOpen} onClick={() => setCancelOpen(!cancelOpen)}>{cancelOpen ? 'Keep order' : 'Cancel order'}</button>}
     </div></div>
+    {editing && status === 'draft' && <DraftEditor order={order} menu={menu} busy={busy} save={saveDraft} close={() => setEditing(false)} />}
     {cancelOpen && canCancel && <form className="cancel-form" onSubmit={event => void submitCancellation(event)}>
       <label className="field">Reason for cancellation<textarea required maxLength={300} value={reason} onChange={event => setReason(event.target.value)} /></label>
       {status === 'draft' ? <p>Draft orders have not deducted stock.</p> : <fieldset><legend>What should happen to deducted stock?</legend><label><input type="radio" name={`disposition-${order.id}`} value="Return" checked={disposition === 'Return'} onChange={() => setDisposition('Return')} required /> Return reusable stock</label><label><input type="radio" name={`disposition-${order.id}`} value="Waste" checked={disposition === 'Waste'} onChange={() => setDisposition('Waste')} required /> Mark as waste</label><p>Older submitted orders without a stock ledger may be rejected.</p></fieldset>}

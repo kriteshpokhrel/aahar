@@ -16,9 +16,9 @@ export type Table = {
 
 export type Order = {
   id: number
-  tableId: number
+  tableId: number | null
   status: string
-  items: { menuItemId: number; name: string; quantity: number; unitPrice: number }[]
+  items: OrderItem[]
   total: number
   createdAt: string
   payment: { id: number; method: string; amount: number; paidAt: string } | null
@@ -28,6 +28,9 @@ export type Order = {
   cancellationStockDisposition?: StockDisposition | null
 }
 
+export type OrderItem = { menuItemId: number; name: string; quantity: number; unitPrice: number; notes: string | null }
+export type OrderLine = { menuItemId: number; quantity: number; notes: string | null }
+export type KitchenTicket = { id: number; orderId: number; tableId: number | null; status: string; createdAt: string; isReconstructed: boolean; items: OrderItem[] }
 export type User = { username: string; role: string }
 export type PaymentMethod = 'Cash' | 'Card'
 export type StockDisposition = 'None' | 'Return' | 'Waste'
@@ -82,10 +85,15 @@ export const api = {
   guestMenu: () => request<MenuItem[]>('/guest/menu'),
   tables: () => request<Table[]>('/tables'),
   orders: () => request<Order[]>('/orders'),
-  createOrder: (tableId: number, items: { menuItemId: number; quantity: number }[]) =>
+  createOrder: (tableId: number | null, items: OrderLine[]) =>
     post<Order>('/orders', { tableId, items }),
+  editOrder: (id: number, items: OrderLine[]) =>
+    request<Order>(`/orders/${id}/items`, { method: 'PUT', body: JSON.stringify({ items }) }),
   sendOrder: (id: number) => post(`/orders/${id}/send`),
   completeOrder: (id: number) => post(`/orders/${id}/complete`),
+  kitchenTickets: () => request<KitchenTicket[]>('/kitchen/tickets'),
+  prepareTicket: (id: number) => post<KitchenTicket>(`/kitchen/tickets/${id}/prepare`),
+  readyTicket: (id: number) => post<KitchenTicket>(`/kitchen/tickets/${id}/ready`),
   payOrder: (id: number, method: PaymentMethod) => post<Order>(`/orders/${id}/payments`, { method }),
   cancelOrder: (id: number, reason: string, stockDisposition: StockDisposition) =>
     post<Order>(`/orders/${id}/cancel`, { reason, stockDisposition }),
