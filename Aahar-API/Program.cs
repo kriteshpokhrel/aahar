@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -129,6 +128,32 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
+    var limit = context.GetEndpoint()?.Metadata.GetMetadata<RequestBodyLimit>()?.Bytes;
+    if (limit is not null)
+    {
+        if (context.Request.ContentLength > limit)
+        {
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            return;
+        }
+        context.Request.EnableBuffering(bufferThreshold: limit.Value + 1, bufferLimit: (long)limit.Value + 1);
+        var buffer = new byte[8192];
+        long total = 0;
+        int read;
+        while (total <= limit && (read = await context.Request.Body.ReadAsync(
+            buffer.AsMemory(0, (int)Math.Min(buffer.Length, limit.Value + 1 - total)), context.RequestAborted)) != 0)
+            total += read;
+        if (total > limit)
+        {
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            return;
+        }
+        context.Request.Body.Position = 0;
+    }
+    await next();
+});
+app.Use(async (context, next) =>
+{
     if (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) ||
         HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method))
         await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context);
@@ -151,7 +176,7 @@ auth.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); r
 
 app.MapGet("/api/guest/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(true, ct));
 app.MapPost("/api/guest/requests", (SubmitGuestRequest r, IGuestRequestService s, CancellationToken ct) => s.SubmitAsync(r, ct))
-    .RequireRateLimiting("guest-submit").WithMetadata(new RequestSizeLimitAttribute(65536));
+    .RequireRateLimiting("guest-submit").WithMetadata(new RequestBodyLimit(65536));
 app.MapGet("/api/guest/requests/{id:int}", async (int id, HttpContext ctx, IGuestRequestService s, CancellationToken ct) =>
 {
     var status = await s.StatusAsync(id, ctx.Request.Headers["X-Guest-Request-Token"].ToString(), ct);
@@ -203,3 +228,4 @@ api.MapGet("/reports/best-selling", (string? fromDate, string? toDate, int? limi
 app.Run();
 
 public partial class Program;
+public sealed record RequestBodyLimit(int Bytes);

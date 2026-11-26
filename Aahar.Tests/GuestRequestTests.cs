@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Aahar.Application;
 using Aahar.Domain;
 using Aahar.Infrastructure;
@@ -106,14 +107,46 @@ public class GuestRequestTests
         var submission = (await created.Content.ReadFromJsonAsync<GuestSubmissionDto>())!;
         Assert.Equal("Pending", submission.Status);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/guest/requests/{submission.Id}")).StatusCode);
+        client.DefaultRequestHeaders.Add("X-Guest-Request-Token", new string('B', 64));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/guest/requests/{submission.Id}")).StatusCode);
+        client.DefaultRequestHeaders.Remove("X-Guest-Request-Token");
         client.DefaultRequestHeaders.Add("X-Guest-Request-Token", submission.AccessToken);
-        var status = await client.GetFromJsonAsync<GuestStatusDto>($"/api/guest/requests/{submission.Id}");
+        var statusResponse = await client.GetAsync($"/api/guest/requests/{submission.Id}");
+        Assert.True(statusResponse.Headers.CacheControl!.NoStore);
+        var status = await statusResponse.Content.ReadFromJsonAsync<GuestStatusDto>();
         Assert.Equal("Pending", status!.Status);
         Assert.Null(status.OrderId);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/guest-requests")).StatusCode);
         for (var i = 0; i < 3; i++)
             Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/guest/requests", body)).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.PostAsJsonAsync("/api/guest/requests", body)).StatusCode);
+    }
+
+    [Fact]
+    public async Task GuestSubmissionRejectsBodiesLargerThanLimit()
+    {
+        await using var factory = new TestFactory();
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var csrf = (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken;
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", csrf);
+        using var content = new StringContent("{\"padding\":\"" + new string('x', 65536) + "\"}", Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await client.PostAsync("/api/guest/requests", content)).StatusCode);
+    }
+
+    [Fact]
+    public async Task GuestSubmissionEnforcesLimitForUnknownLengthAndAllowsBoundary()
+    {
+        await using var factory = new TestFactory();
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var csrf = (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken;
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", csrf);
+        const string prefix = "{\"padding\":\"";
+        const string suffix = "\"}";
+        var boundary = prefix + new string('x', 65536 - prefix.Length - suffix.Length) + suffix;
+        using var allowed = new UnknownLengthContent(boundary);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/guest/requests", allowed)).StatusCode);
+        using var oversized = new UnknownLengthContent(boundary + " ");
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await client.PostAsync("/api/guest/requests", oversized)).StatusCode);
     }
 
     [Fact]
@@ -150,6 +183,19 @@ public class GuestRequestTests
     }
 
     private record Csrf(string RequestToken);
+
+    private sealed class UnknownLengthContent : HttpContent
+    {
+        private readonly string body;
+        public UnknownLengthContent(string body)
+        {
+            this.body = body;
+            Headers.ContentType = new("application/json");
+        }
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(Encoding.UTF8.GetBytes(body)).AsTask();
+    }
 }
 
 public sealed class FakeGuestService : IGuestRequestService
