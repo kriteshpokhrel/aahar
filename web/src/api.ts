@@ -36,6 +36,9 @@ export type PaymentMethod = 'Cash' | 'Card'
 export type StockDisposition = 'None' | 'Return' | 'Waste'
 export type Ingredient = { id: number; name: string; unit: string; stock: number }
 export type Sales = { ordersPaid: number; total: number }
+export type ReportWindow = { fromDate: string; toDate: string; timeZone: string; fromUtc: string; toUtcExclusive: string }
+export type PaidSalesReport = ReportWindow & { ordersPaid: number; total: number }
+export type BestSellingReport = ReportWindow & { items: { menuItemId: number; name: string; unitPrice: number; quantity: number; revenue: number }[] }
 export type MenuInput = { name: string; description: string | null; category: string; price: number; isAvailable: boolean }
 export type GuestStatus = 'Pending' | 'Accepted' | 'Rejected'
 export type GuestQuoteLine = OrderLine & { quotedUnitPrice: number }
@@ -124,4 +127,12 @@ export const api = {
   createIngredient: (name: string, unit: string, stock: number) => post<Ingredient>('/ingredients', { name, unit, stock }),
   addStock: (id: number, quantity: number) => post<Ingredient>(`/ingredients/${id}/stock`, { quantity }),
   sales: () => request<Sales>('/sales'),
+  salesReport: (fromDate: string, toDate: string) => {
+    const query = new URLSearchParams({ fromDate, toDate })
+    return request<PaidSalesReport>(`/reports/sales?${query}`)
+  },
+  bestSellingReport: (fromDate: string, toDate: string, limit = 20) => {
+    const query = new URLSearchParams({ fromDate, toDate, limit: String(limit) })
+    return request<BestSellingReport>(`/reports/best-selling?${query}`)
+  },
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from './api'
-import type { Ingredient, MenuInput, MenuItem, Sales } from './api'
+import type { BestSellingReport, Ingredient, MenuInput, MenuItem, PaidSalesReport } from './api'
+import { reportDateError } from './reportDates'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.'
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
@@ -72,13 +73,25 @@ export function Inventory() {
 }
 
 export function SalesReport() {
-  const [sales, setSales] = useState<Sales | null>(null)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [report, setReport] = useState<{ sales: PaidSalesReport; bestSelling: BestSellingReport } | null>(null)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
-  function load() {
-    setLoading(true); setError('')
-    void api.sales().then(setSales).catch(e => setError(errorText(e))).finally(() => setLoading(false))
+  const [loading, setLoading] = useState(false)
+  async function load(event: FormEvent) {
+    event.preventDefault()
+    const validation = reportDateError(fromDate, toDate)
+    if (validation) { setError(validation); return }
+    setLoading(true); setError(''); setReport(null)
+    try {
+      const [sales, bestSelling] = await Promise.all([api.salesReport(fromDate, toDate), api.bestSellingReport(fromDate, toDate)])
+      setReport({ sales, bestSelling })
+    } catch (e) { setError(errorText(e)) } finally { setLoading(false) }
   }
-  useEffect(() => { void api.sales().then(setSales).catch(e => setError(errorText(e))).finally(() => setLoading(false)) }, [])
-  return <div className="surface"><div className="section-heading"><div><span className="eyebrow">PAID ORDERS</span><h2>Sales overview</h2></div></div>{loading && <p role="status">Loading sales…</p>}{error && <div className="alert" role="alert">{error} <button onClick={load}>Retry</button></div>}{sales && <div className="sales-grid"><div><span>PAID ORDERS</span><strong>{sales.ordersPaid}</strong></div><div><span>RECORDED TOTAL</span><strong>{money(sales.total)}</strong></div></div>}<p className="muted-copy">Payments are simulated. This is not a tax or IRD-compliant report.</p></div>
+  return <div className="surface"><div className="section-heading"><div><span className="eyebrow">PAID ORDERS</span><h2>Sales overview</h2></div></div>
+    <p className="muted-copy">Choose inclusive business dates, up to 366 days. Reports use the restaurant’s configured timezone and payment date.</p>
+    <form className="report-form" onSubmit={event => void load(event)}><label className="field">From date<input type="date" min="1900-01-01" max="9998-12-30" required value={fromDate} onChange={event => setFromDate(event.target.value)} /></label><label className="field">To date<input type="date" min="1900-01-01" max="9998-12-30" required value={toDate} onChange={event => setToDate(event.target.value)} /></label><button className="button primary" disabled={loading}>{loading ? 'Loading…' : 'View report'}</button></form>
+    {loading && <p role="status">Loading reports…</p>}{error && <div className="alert" role="alert">{error}</div>}
+    {report && <><p className="report-period">{report.sales.fromDate} to {report.sales.toDate} · {report.sales.timeZone}</p><p className="muted-copy">Payment window: {report.sales.fromUtc} inclusive to {report.sales.toUtcExclusive} exclusive (UTC).</p><div className="sales-grid"><div><span>PAID ORDERS</span><strong>{report.sales.ordersPaid}</strong></div><div><span>RECORDED TOTAL</span><strong>{money(report.sales.total)}</strong></div></div><div className="report-table-heading"><h3>Best-selling items</h3><span className="count-label">Top {report.bestSelling.items.length} rows</span></div><p className="muted-copy">Grouped by the item name and price recorded at the time of sale. Renamed or repriced items may appear more than once.</p>{report.bestSelling.items.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Item</th><th>Unit price</th><th>Quantity</th><th>Revenue</th></tr></thead><tbody>{report.bestSelling.items.map((item, index) => <tr key={`${item.menuItemId}-${index}`}><td>{item.name}</td><td>{money(item.unitPrice)}</td><td>{item.quantity}</td><td>{money(item.revenue)}</td></tr>)}</tbody></table></div> : <p className="muted-copy">No paid item sales in this period.</p>}</>}
+    <p className="muted-copy">Payments are simulated. This is not a tax or IRD-compliant report.</p></div>
 }

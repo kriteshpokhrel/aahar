@@ -25,4 +25,6 @@ Orders can be dine-in or takeaway. Draft items and kitchen notes can be edited b
 
 Guests can submit quoted requests for staff review using a takeaway or table-specific guest link. Staff acceptance creates a draft order, not a kitchen ticket; prices, availability and table occupancy are revalidated. Guest status lookup uses an access token held only in page memory, so closing or reloading the page loses lookup access. If submission has an uncertain network outcome, ask staff before trying again: the API has no idempotency or token recovery. Table links expose a table reference rather than a verified table number; guests should confirm it with staff.
 
+The manager reports use an inclusive business-date range of at most 366 days. The API supplies the business timezone and UTC payment window; best-selling rows use the item name and price snapshots recorded at sale.
+
 Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Recipe management, staff administration, stock ledger browsing and QR generation are not implemented in the frontend. Guest menu links on localhost work only on the same computer.

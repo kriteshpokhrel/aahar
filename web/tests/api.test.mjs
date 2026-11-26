@@ -117,3 +117,26 @@ test('guest token stays in request header and staff review uses the correct endp
     globalThis.fetch = originalFetch
   }
 })
+
+test('reports send inclusive date parameters and preserve snapshot rows', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url.startsWith('/api/reports/sales')) return Response.json({ fromDate: '2024-01-01', toDate: '2024-12-31', timeZone: 'Asia/Kathmandu', ordersPaid: 2, total: 700 })
+    return Response.json({ items: [{ menuItemId: 1, name: 'Old name', unitPrice: 300, quantity: 1, revenue: 300 }, { menuItemId: 1, name: 'New name', unitPrice: 400, quantity: 1, revenue: 400 }] })
+  }
+  try {
+    const sales = await api.salesReport('2024-01-01', '2024-12-31')
+    const best = await api.bestSellingReport('2024-01-01', '2024-12-31')
+    assert.equal(sales.timeZone, 'Asia/Kathmandu')
+    assert.equal(best.items.length, 2)
+    assert.deepEqual(calls.map(call => call.url), [
+      '/api/reports/sales?fromDate=2024-01-01&toDate=2024-12-31',
+      '/api/reports/best-selling?fromDate=2024-01-01&toDate=2024-12-31&limit=20',
+    ])
+    assert.ok(calls.every(call => call.options.credentials === 'same-origin'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
