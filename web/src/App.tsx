@@ -8,7 +8,9 @@ import {
 import { api, ApiError } from './api'
 import type { KitchenTicket, MenuItem, Order, OrderLine, PaymentMethod, StockDisposition, Table, User } from './api'
 import { demoMenu, demoOrders, demoTables, demoTickets } from './demo'
-import { Inventory, MenuEditor, SalesReport, TableEditor } from './Management'
+import { MenuEditor, SalesReport, TableEditor } from './Management'
+import { Inventory } from './Inventory'
+import type { UncertainPurchase } from './Inventory'
 import { OrderTicket } from './OrderTicket'
 import { KitchenCard } from './KitchenCard'
 import { GuestOrdering } from './GuestOrdering'
@@ -93,6 +95,7 @@ function App() {
   const [category, setCategory] = useState('All items')
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  const [uncertainPurchase, setUncertainPurchase] = useState<UncertainPurchase | null>(null)
 
   useEffect(() => {
     if (guestPath) return
@@ -260,7 +263,7 @@ function App() {
         {page === 'guest-requests' && canServe && !demo && <><PageHeading eyebrow="GUEST SERVICE" title="Guest requests" text="Review requests before they become orders." /><GuestRequests tables={tables} onChanged={refresh} /></>}
         {page === 'menu' && <><PageHeading eyebrow="FOOD & DRINK" title="Your menu" text="Everything you’re serving, in one place." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">MENU CATALOGUE</span><h2>All menu items</h2></div><span className="count-label">{menu.length} items</span></div>{canManage && <MenuEditor items={menu} refresh={refresh} />}<div className="list-table"><div className="list-header"><span>ITEM</span><span>AVAILABILITY</span><span>PRICE</span></div>{menu.map(item => <div className="list-row" key={item.id}><span><strong>{item.name}</strong><small>{item.description || item.category || 'Menu item'}</small></span><span><span className={`status ${item.isAvailable ? '' : 'status-busy'}`}>{item.isAvailable ? 'Available' : 'Unavailable'}</span></span><strong>{money(item.price)}</strong></div>)}</div>{!loading && !menu.length && <Empty title="No menu items found" text="Your menu will appear here when available." />}</div></>}
         {(page === 'inventory' || page === 'reports') && !canManage && <><PageHeading eyebrow={page === 'inventory' ? 'STOCK & SUPPLIES' : 'THE BIG PICTURE'} title={page === 'inventory' ? 'Inventory' : 'Reports'} text={page === 'inventory' ? 'Stay on top of what your kitchen needs.' : 'Make sense of your service.'} /><div className="surface placeholder"><span className="placeholder-icon">{page === 'inventory' ? <Package size={25} /> : <ClipboardList size={25} />}</span><span className="eyebrow">ACCESS & AVAILABILITY</span><h2>{demo ? 'Not available in sample mode.' : 'Manager access required.'}</h2><p>{demo ? 'Sample mode does not connect to inventory or sales data.' : 'Inventory and sales data are available to managers and administrators.'}</p></div></>}
-        {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory /></>}
+        {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory uncertain={uncertainPurchase} setUncertain={setUncertainPurchase} /></>}
         {page === 'reports' && canManage && <><PageHeading eyebrow="THE BIG PICTURE" title="Reports" text="Make sense of your service." /><SalesReport /></>}
         {page === 'guest' && <><PageHeading eyebrow="SHARE WHAT’S GOOD" title="Guest menu" text="A simple, read-only view of your menu." /><div className="surface guest-preview"><div><span className="eyebrow">GUEST EXPERIENCE</span><h2>Let the menu do the talking.</h2><p>Open the guest menu on this computer. A localhost link cannot be used by guests on other devices.</p>{!demo && <label className="field guest-table-select">Guest link destination<select value={guestTable} onChange={event => setGuestTable(event.target.value)}><option value="">Takeaway</option>{tables.map(table => <option value={table.id} key={table.id}>Table {table.number}</option>)}</select></label>}<a className="button primary" href={demo ? '?guest=sample' : guestTable ? `?guest&tableId=${guestTable}` : '?guest'} target="_blank" rel="noreferrer">Open guest menu <ArrowRight size={16} /></a></div><div className="guest-preview-art"><Coffee size={40} strokeWidth={1.2} /><span>GOOD FOOD.<br />GOOD COMPANY.</span></div></div></>}
       </div>

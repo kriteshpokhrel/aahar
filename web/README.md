@@ -27,4 +27,6 @@ Guests can submit quoted requests for staff review using a takeaway or table-spe
 
 The manager reports use an inclusive business-date range of at most 366 days. The API supplies the business timezone and UTC payment window; best-selling rows use the item name and price snapshots recorded at sale.
 
-Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Recipe management, staff administration, stock ledger browsing and QR generation are not implemented in the frontend. Guest menu links on localhost work only on the same computer.
+Managers can view low stock, change thresholds, record stock and waste, browse movement and threshold histories, manage suppliers and their change history, and record and browse purchase receipts. Quantities use the ingredient's exact unit; receipt totals and snapshots come from the server. Supplier references are case-sensitive and unique per supplier. If recording a receipt has an uncertain outcome, check receipt history and with staff before trying again; the API does not provide idempotent retry. The warning is kept only in the current page session and is lost on reload.
+
+Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Recipe management, staff administration and QR generation are not implemented in the frontend. Guest menu links on localhost work only on the same computer.

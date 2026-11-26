@@ -34,7 +34,13 @@ export type KitchenTicket = { id: number; orderId: number; tableId: number | nul
 export type User = { username: string; role: string }
 export type PaymentMethod = 'Cash' | 'Card'
 export type StockDisposition = 'None' | 'Return' | 'Waste'
-export type Ingredient = { id: number; name: string; unit: string; stock: number }
+export type Ingredient = { id: number; name: string; unit: string; stock: number; lowStockThreshold: number; isLowStock: boolean }
+export type Supplier = { id: number; name: string; contact: string | null }
+export type SupplierChange = { id: number; supplierId: number; name: string; contact: string | null; actor: string; reason: string; occurredAt: string }
+export type ThresholdChange = { id: number; ingredientId: number; previousThreshold: number | null; newThreshold: number; actor: string; reason: string; occurredAt: string }
+export type StockMovement = { id: number; ingredientId: number; orderId: number | null; kind: string; quantityChange: number; balanceAfter: number; actor: string; occurredAt: string; reason: string | null; purchaseReceiptLineId: number | null }
+export type PurchaseLine = { ingredientId: number; quantity: number; unit: string; unitCost: number }
+export type PurchaseReceipt = { id: number; supplierId: number; supplierName: string; reference: string; reason: string; actor: string; receivedAt: string; total: number; lines: { id: number; ingredientId: number; ingredientName: string; unit: string; quantity: number; unitCost: number; lineTotal: number }[] }
 export type Sales = { ordersPaid: number; total: number }
 export type ReportWindow = { fromDate: string; toDate: string; timeZone: string; fromUtc: string; toUtcExclusive: string }
 export type PaidSalesReport = ReportWindow & { ordersPaid: number; total: number }
@@ -81,6 +87,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+const put = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+const page = (beforeId?: number) => {
+  const query = new URLSearchParams({ limit: '20' })
+  if (beforeId !== undefined) query.set('beforeId', String(beforeId))
+  return query.toString()
+}
 
 export const api = {
   me: () => request<User>('/auth/me'),
@@ -124,8 +137,21 @@ export const api = {
   updateMenuItem: (id: number, item: MenuInput) => request<MenuItem>(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(item) }),
   createTable: (number: number, capacity: number) => post<Table>('/tables', { number, capacity }),
   ingredients: () => request<Ingredient[]>('/ingredients'),
-  createIngredient: (name: string, unit: string, stock: number) => post<Ingredient>('/ingredients', { name, unit, stock }),
-  addStock: (id: number, quantity: number) => post<Ingredient>(`/ingredients/${id}/stock`, { quantity }),
+  lowStock: () => request<Ingredient[]>('/ingredients/low-stock'),
+  createIngredient: (name: string, unit: string, stock: number, lowStockThreshold = 0) => post<Ingredient>('/ingredients', { name, unit, stock, lowStockThreshold }),
+  addStock: (id: number, quantity: number, unit: string, reason: string) => post<Ingredient>(`/ingredients/${id}/stock`, { quantity, unit, reason }),
+  waste: (id: number, quantity: number, unit: string, reason: string) => post<Ingredient>(`/ingredients/${id}/waste`, { quantity, unit, reason }),
+  setThreshold: (id: number, threshold: number, reason: string) => put<Ingredient>(`/ingredients/${id}/threshold`, { threshold, reason }),
+  thresholdHistory: (id: number, beforeId?: number) => request<ThresholdChange[]>(`/ingredients/${id}/threshold-history?${page(beforeId)}`),
+  movements: (id: number, beforeId?: number) => request<StockMovement[]>(`/ingredients/${id}/movements?${page(beforeId)}`),
+  suppliers: () => request<Supplier[]>('/suppliers'),
+  createSupplier: (name: string, contact: string | null, reason: string) => post<Supplier>('/suppliers', { name, contact, reason }),
+  updateSupplier: (id: number, name: string, contact: string | null, reason: string) => put<Supplier>(`/suppliers/${id}`, { name, contact, reason }),
+  supplierHistory: (id: number, beforeId?: number) => request<SupplierChange[]>(`/suppliers/${id}/history?${page(beforeId)}`),
+  receivePurchase: (supplierId: number, reference: string, reason: string, lines: PurchaseLine[]) =>
+    post<PurchaseReceipt>('/purchase-receipts', { supplierId, reference, reason, lines }),
+  purchaseReceipts: (beforeId?: number) => request<PurchaseReceipt[]>(`/purchase-receipts?${page(beforeId)}`),
+  purchaseReceipt: (id: number) => request<PurchaseReceipt>(`/purchase-receipts/${id}`),
   sales: () => request<Sales>('/sales'),
   salesReport: (fromDate: string, toDate: string) => {
     const query = new URLSearchParams({ fromDate, toDate })

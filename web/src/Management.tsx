@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from './api'
-import type { BestSellingReport, Ingredient, MenuInput, MenuItem, PaidSalesReport } from './api'
+import type { BestSellingReport, MenuInput, MenuItem, PaidSalesReport } from './api'
 import { reportDateError } from './reportDates'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.'
@@ -43,33 +43,6 @@ export function TableEditor({ refresh }: { refresh: () => Promise<void> }) {
     catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
   return <form className="management management-form" onSubmit={submit}><h3>Add a table</h3><label className="field">Table number<input required type="number" min="1" step="1" value={number} onChange={e => setNumber(e.target.value)} /></label><label className="field">Seats<input required type="number" min="1" step="1" value={capacity} onChange={e => setCapacity(e.target.value)} /></label>{error && <div className="alert" role="alert">{error}</div>}<button className="button primary" disabled={busy}>{busy ? 'Adding…' : 'Add table'}</button></form>
-}
-
-export function Inventory() {
-  const [ingredients, setIngredients] = useState<Ingredient[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [name, setName] = useState('')
-  const [unit, setUnit] = useState('')
-  const [stock, setStock] = useState('')
-  const [quantities, setQuantities] = useState<Record<number, string>>({})
-  const [busy, setBusy] = useState(false)
-  async function load() {
-    setLoading(true); setError('')
-    try { setIngredients(await api.ingredients()) } catch (e) { setError(errorText(e)) } finally { setLoading(false) }
-  }
-  useEffect(() => { void api.ingredients().then(setIngredients).catch(e => setError(errorText(e))).finally(() => setLoading(false)) }, [])
-  async function addIngredient(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('')
-    try { await api.createIngredient(name, unit, Number(stock)); setName(''); setUnit(''); setStock(''); await load() }
-    catch (e) { setError(errorText(e)) } finally { setBusy(false) }
-  }
-  async function addStock(event: FormEvent, ingredient: Ingredient) {
-    event.preventDefault(); setBusy(true); setError('')
-    try { await api.addStock(ingredient.id, Number(quantities[ingredient.id])); setQuantities(current => ({ ...current, [ingredient.id]: '' })); await load() }
-    catch (e) { setError(errorText(e)) } finally { setBusy(false) }
-  }
-  return <div className="surface"><div className="section-heading"><div><span className="eyebrow">STOCK ON HAND</span><h2>Ingredients</h2></div><span className="count-label">{ingredients.length} items</span></div>{error && <div className="alert" role="alert">{error} <button onClick={() => void load()}>Retry</button></div>}{loading && <p role="status">Loading ingredients…</p>}{!loading && !ingredients.length && !error && <p className="muted-copy">No ingredients yet. Add one below.</p>}<div className="stock-list">{ingredients.map(item => <div className="stock-row" key={item.id}><div><strong>{item.name}</strong><small>{item.stock} {item.unit} on hand</small></div><form onSubmit={e => void addStock(e, item)}><label className="sr-only" htmlFor={`stock-${item.id}`}>Add stock for {item.name}</label><input id={`stock-${item.id}`} type="number" min="0.01" step="any" required placeholder="Quantity" value={quantities[item.id] ?? ''} onChange={e => setQuantities({ ...quantities, [item.id]: e.target.value })} /><button className="button small secondary" disabled={busy}>Add stock</button></form></div>)}</div><form className="management management-form" onSubmit={addIngredient}><h3>Add an ingredient</h3><label className="field">Name<input required value={name} onChange={e => setName(e.target.value)} /></label><label className="field">Unit<input required placeholder="e.g. kg" value={unit} onChange={e => setUnit(e.target.value)} /></label><label className="field">Opening stock<input required type="number" min="0" step="any" value={stock} onChange={e => setStock(e.target.value)} /></label><button className="button primary" disabled={busy}>{busy ? 'Adding…' : 'Add ingredient'}</button></form></div>
 }
 
 export function SalesReport() {

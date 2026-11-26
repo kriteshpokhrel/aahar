@@ -140,3 +140,54 @@ test('reports send inclusive date parameters and preserve snapshot rows', async 
     globalThis.fetch = originalFetch
   }
 })
+
+test('inventory mutations use exact units, audit reasons and receipt lines; conflicts are surfaced', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/purchase-receipts') return Response.json({ detail: 'Supplier reference already exists' }, { status: 409 })
+    return Response.json({ id: 1 })
+  }
+  try {
+    await api.createIngredient('Flour', 'kg', 5.125, 1)
+    await api.addStock(1, 0.125, 'kg', 'Correction')
+    await api.waste(1, 0.5, 'kg', 'Spoilage')
+    await api.setThreshold(1, 2.5, 'Review')
+    await api.createSupplier('Mill', null, 'Initial')
+    await api.updateSupplier(3, 'Mill', 'Contact', 'Changed')
+    const lines = [{ ingredientId: 1, quantity: 1.125, unit: 'kg', unitCost: 25.5 }]
+    await assert.rejects(api.receivePurchase(3, 'REF-1', 'Delivery', lines), error => error instanceof ApiError && error.status === 409 && error.message === 'Supplier reference already exists')
+    assert.deepEqual(calls.map(call => [call.url, call.options.method, JSON.parse(call.options.body)]), [
+      ['/api/ingredients', 'POST', { name: 'Flour', unit: 'kg', stock: 5.125, lowStockThreshold: 1 }],
+      ['/api/ingredients/1/stock', 'POST', { quantity: 0.125, unit: 'kg', reason: 'Correction' }],
+      ['/api/ingredients/1/waste', 'POST', { quantity: 0.5, unit: 'kg', reason: 'Spoilage' }],
+      ['/api/ingredients/1/threshold', 'PUT', { threshold: 2.5, reason: 'Review' }],
+      ['/api/suppliers', 'POST', { name: 'Mill', contact: null, reason: 'Initial' }],
+      ['/api/suppliers/3', 'PUT', { name: 'Mill', contact: 'Contact', reason: 'Changed' }],
+      ['/api/purchase-receipts', 'POST', { supplierId: 3, reference: 'REF-1', reason: 'Delivery', lines }],
+    ])
+    assert.ok(calls.every(call => call.options.headers.get('X-CSRF-TOKEN') === 'token'))
+    assert.equal(calls.filter(call => call.url === '/api/purchase-receipts').length, 1)
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('inventory history uses cursor pagination and receipt detail endpoint', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => { calls.push({ url, options }); return Response.json([]) }
+  try {
+    await api.lowStock()
+    await api.movements(1, 44)
+    await api.thresholdHistory(1)
+    await api.supplierHistory(3, 10)
+    await api.purchaseReceipts(21)
+    await api.purchaseReceipt(4)
+    assert.deepEqual(calls.map(call => call.url), [
+      '/api/ingredients/low-stock', '/api/ingredients/1/movements?limit=20&beforeId=44',
+      '/api/ingredients/1/threshold-history?limit=20', '/api/suppliers/3/history?limit=20&beforeId=10',
+      '/api/purchase-receipts?limit=20&beforeId=21', '/api/purchase-receipts/4',
+    ])
+    assert.ok(calls.every(call => call.options.credentials === 'same-origin'))
+  } finally { globalThis.fetch = originalFetch }
+})
