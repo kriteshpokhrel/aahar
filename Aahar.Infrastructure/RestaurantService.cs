@@ -19,6 +19,18 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
     private static OrderDto ToDto(Order order) => new(order.Id, order.TableId, order.Status, order.CreatedAt,
         order.Items.Adapt<List<OrderItemDto>>(), order.Items.Sum(x => x.UnitPrice * x.Quantity), order.Payment?.Adapt<PaymentDto>(),
         order.CancelledAt, order.CancelledBy, order.CancellationReason, order.CancellationStockDisposition);
+    private static KitchenTicketDto ToTicketDto(KitchenTicket ticket) => new(ticket.Id, ticket.OrderId, ticket.Order.TableId,
+        ticket.Status, ticket.CreatedAt, ticket.IsReconstructed, ticket.Items.Adapt<List<KitchenTicketItemDto>>());
+    private static List<DraftLine> DraftLines(List<OrderLineRequest>? items)
+    {
+        Check(items is { Count: > 0 and <= 100 } && items.All(x => x is not null), "Invalid order items.");
+        return items!.Select(x => new DraftLine(x.MenuItemId, x.Quantity, x.Notes)).ToList();
+    }
+    private async Task<Dictionary<int, MenuItem>> MenuForLines(List<DraftLine> lines, CancellationToken ct)
+    {
+        var ids = lines.Select(x => x.MenuItemId).ToArray();
+        return await db.MenuItems.Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+    }
 
     public async Task<UserDto?> AuthenticateAsync(LoginRequest request, CancellationToken ct)
     {
@@ -106,20 +118,26 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
         (await db.Orders.AsNoTracking().Include(x => x.Items).Include(x => x.Payment).OrderByDescending(x => x.CreatedAt).ToListAsync(ct)).Select(ToDto).ToList();
     public async Task<OrderDto> CreateOrderAsync(CreateOrderRequest r, CancellationToken ct)
     {
-        Check(r.TableId > 0 && r.Items is not null && r.Items.Count is > 0 and <= 100 &&
-            r.Items.All(x => x is not null && x.MenuItemId > 0 && x.Quantity is > 0 and <= 1000) &&
-            r.Items.Select(x => x.MenuItemId).Distinct().Count() == r.Items.Count, "Invalid order.");
+        Check(r.TableId is null or > 0, "Invalid table.");
+        var lines = DraftLines(r.Items);
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        Check(await db.Tables.AnyAsync(x => x.Id == r.TableId, ct), "Table not found.");
-        var ids = r.Items!.Select(x => x.MenuItemId).ToArray();
-        var menu = await db.MenuItems.Where(x => ids.Contains(x.Id) && x.IsAvailable).ToDictionaryAsync(x => x.Id, ct);
-        Check(menu.Count == ids.Length, "A menu item is unavailable or missing.");
-        Check(r.Items!.Sum(x => menu[x.MenuItemId].Price * x.Quantity) <= 999999999999.99m, "Order total exceeds the maximum.");
-        var order = new Order { TableId = r.TableId, Items = r.Items!.Select(x => new OrderItem { MenuItemId = x.MenuItemId, Name = menu[x.MenuItemId].Name, UnitPrice = menu[x.MenuItemId].Price, Quantity = x.Quantity }).ToList() };
+        if (r.TableId is not null) Check(await db.Tables.AnyAsync(x => x.Id == r.TableId, ct), "Table not found.");
+        var order = new Order { TableId = r.TableId };
+        OrderRules.SetDraftItems(order, lines, await MenuForLines(lines, ct));
         db.Orders.Add(order); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
     }
     private async Task<Order> GetOrder(int id, CancellationToken ct) =>
-        await db.Orders.Include(x => x.Items).Include(x => x.Payment).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new DomainException("Order not found.");
+        await db.Orders.Include(x => x.Items).Include(x => x.Payment).Include(x => x.Ticket).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new DomainException("Order not found.");
+    public async Task<OrderDto> EditOrderItemsAsync(int id, EditOrderItemsRequest r, CancellationToken ct)
+    {
+        var lines = DraftLines(r.Items);
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var order = await GetOrder(id, ct);
+        var oldItems = order.Items.ToArray();
+        OrderRules.SetDraftItems(order, lines, await MenuForLines(lines, ct));
+        db.Set<OrderItem>().RemoveRange(oldItems.Except(order.Items));
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
+    }
     public async Task<OrderDto> SendOrderAsync(int id, string actor, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
@@ -128,6 +146,8 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
         var ids = order.Items.Select(x => x.MenuItemId).ToArray();
         var recipes = await db.Recipes.Include(x => x.Ingredient).Where(x => ids.Contains(x.MenuItemId)).ToListAsync(ct);
         db.StockMovements.AddRange(OrderRules.DeductStock(order, recipes, actor));
+        order.Ticket = KitchenRules.CreateTicket(order);
+        OrderRules.Touch(order);
         order.Status = "Sent";
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
     }
@@ -143,8 +163,8 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
     public async Task<OrderDto> CompleteOrderAsync(int id, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var order = await GetOrder(id, ct); OrderRules.RequireTransition(order.Status, "Sent");
-        order.Status = "Completed"; await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
+        var order = await GetOrder(id, ct); KitchenRules.Complete(order);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
     }
     public async Task<OrderDto> PayAsync(int id, PaymentRequest r, CancellationToken ct)
     {
@@ -152,9 +172,23 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var order = await GetOrder(id, ct); OrderRules.RequireTransition(order.Status, "Completed");
         Check(order.Payment is null, "Order is already paid.");
+        OrderRules.Touch(order);
         order.Payment = new Payment { Method = r.Method, Amount = order.Items.Sum(x => x.UnitPrice * x.Quantity) };
         order.Status = "Paid"; await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(order);
     }
     public async Task<SalesDto> SalesAsync(CancellationToken ct) =>
         new(await db.Payments.CountAsync(ct), await db.Payments.SumAsync(x => x.Amount, ct));
+    public async Task<IReadOnlyList<KitchenTicketDto>> KitchenTicketsAsync(CancellationToken ct) =>
+        (await db.KitchenTickets.AsNoTracking().Include(x => x.Order).Include(x => x.Items)
+            .OrderByDescending(x => x.CreatedAt).ToListAsync(ct)).Select(ToTicketDto).ToList();
+    private async Task<KitchenTicketDto> TransitionTicketAsync(int id, string from, string to, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var ticket = await db.KitchenTickets.Include(x => x.Order).Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new DomainException("Kitchen ticket not found.");
+        KitchenRules.Transition(ticket, from, to);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToTicketDto(ticket);
+    }
+    public Task<KitchenTicketDto> PrepareTicketAsync(int id, CancellationToken ct) => TransitionTicketAsync(id, "Queued", "Preparing", ct);
+    public Task<KitchenTicketDto> ReadyTicketAsync(int id, CancellationToken ct) => TransitionTicketAsync(id, "Preparing", "Ready", ct);
 }

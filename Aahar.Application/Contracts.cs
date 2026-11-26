@@ -13,12 +13,15 @@ public record StockRequest(decimal Quantity);
 public record StockMovementDto(long Id, int IngredientId, int? OrderId, string Kind, decimal QuantityChange, decimal BalanceAfter, string Actor, DateTime OccurredAt);
 public record RecipeLine(int IngredientId, decimal Quantity);
 public record RecipeRequest(List<RecipeLine> Ingredients);
-public record OrderLineRequest(int MenuItemId, int Quantity);
-public record CreateOrderRequest(int TableId, List<OrderLineRequest> Items);
-public record OrderItemDto(int MenuItemId, string Name, int Quantity, decimal UnitPrice);
+public record OrderLineRequest(int MenuItemId, int Quantity, string? Notes = null);
+public record CreateOrderRequest(int? TableId, List<OrderLineRequest> Items);
+public record EditOrderItemsRequest(List<OrderLineRequest> Items);
+public record OrderItemDto(int MenuItemId, string Name, int Quantity, decimal UnitPrice, string? Notes);
 public record PaymentDto(int Id, string Method, decimal Amount, DateTime PaidAt);
-public record OrderDto(int Id, int TableId, string Status, DateTime CreatedAt, List<OrderItemDto> Items, decimal Total, PaymentDto? Payment,
+public record OrderDto(int Id, int? TableId, string Status, DateTime CreatedAt, List<OrderItemDto> Items, decimal Total, PaymentDto? Payment,
     DateTime? CancelledAt, string? CancelledBy, string? CancellationReason, string? CancellationStockDisposition);
+public record KitchenTicketItemDto(int MenuItemId, string Name, int Quantity, decimal UnitPrice, string? Notes);
+public record KitchenTicketDto(int Id, int OrderId, int? TableId, string Status, DateTime CreatedAt, bool IsReconstructed, List<KitchenTicketItemDto> Items);
 public record PaymentRequest(string Method);
 public record CancelOrderRequest(string Reason, string StockDisposition);
 public record SalesDto(int OrdersPaid, decimal Total);
@@ -39,9 +42,13 @@ public interface IRestaurantService
     Task SetRecipeAsync(int menuId, RecipeRequest request, CancellationToken ct);
     Task<IReadOnlyList<OrderDto>> OrdersAsync(CancellationToken ct);
     Task<OrderDto> CreateOrderAsync(CreateOrderRequest request, CancellationToken ct);
+    Task<OrderDto> EditOrderItemsAsync(int id, EditOrderItemsRequest request, CancellationToken ct);
     Task<OrderDto> SendOrderAsync(int id, string actor, CancellationToken ct);
     Task<OrderDto> CancelOrderAsync(int id, CancelOrderRequest request, string actor, string role, CancellationToken ct);
     Task<OrderDto> CompleteOrderAsync(int id, CancellationToken ct);
     Task<OrderDto> PayAsync(int id, PaymentRequest request, CancellationToken ct);
+    Task<IReadOnlyList<KitchenTicketDto>> KitchenTicketsAsync(CancellationToken ct);
+    Task<KitchenTicketDto> PrepareTicketAsync(int id, CancellationToken ct);
+    Task<KitchenTicketDto> ReadyTicketAsync(int id, CancellationToken ct);
     Task<SalesDto> SalesAsync(CancellationToken ct);
 }

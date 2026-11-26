@@ -4,9 +4,11 @@ Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Cor
 
 ## Setup
 
-No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review both migrations in `Aahar.Infrastructure/Migrations` and the generated SQL before applying them. The initial migration's `Down` drops tables; the ledger migration refuses rollback because it would destroy history. Do not apply changes to any database or run rollback commands without explicit approval and a backup.
+No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review all migrations in `Aahar.Infrastructure/Migrations` and the generated SQL before applying them. The initial migration's `Down` drops tables; the ledger and kitchen migrations refuse rollback because it would destroy history. Do not apply changes to any database or run rollback commands without explicit approval and a backup.
 
 When upgrading an already-provisioned dedicated Aahar database, stop all old application instances and inspect it first. The follow-up migration refuses to proceed if multiple Draft, Sent, or Completed orders share a table; reconcile those orders manually with an operator before retrying. It records each existing ingredient's current stock as an opening balance, not a reconstruction of past movements. Submitted orders from before the ledger cannot be cancelled automatically, even as waste, because their actual deductions are unknown. Handle them through a documented manual operational process; do not guess a stock adjustment.
+
+The kitchen migration reconstructs a queued ticket from the stored item snapshots for each existing Sent order, without deducting stock again. These tickets have `isReconstructed:true`, no historical notes, and use the order creation time rather than its unknown send time. An operator must check their actual kitchen status before proceeding; treating them as newly queued could cause food to be prepared twice. Migration stops if a Sent order has no items. Existing Completed and Paid orders do not get reconstructed tickets.
 
 With .NET 10 installed and a dedicated database already created by its owner, configure a connection string privately (do not enter passwords in chat or commit them). For example, in a local bash terminal, prompt without echo and avoid putting the value in shell history:
 
@@ -58,14 +60,20 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 | `GET /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` | Admin, Manager |
 | `PUT /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` replaces recipe; 204 | Admin, Manager |
 | `GET /api/orders` | Orders, newest first | Authenticated |
-| `POST /api/orders` | `{tableId,items:[{menuItemId,quantity}]}`; returns order | Admin, Manager, Staff |
-| `POST /api/orders/{id}/send` | Draft to Sent; returns order | Admin, Manager, Staff |
-| `POST /api/orders/{id}/complete` | Sent to Completed; returns order | Admin, Manager, Kitchen |
+| `POST /api/orders` | `{tableId,items:[{menuItemId,quantity,notes}]}`; `tableId` null or omitted for takeaway; returns order | Admin, Manager, Staff |
+| `PUT /api/orders/{id}/items` | `{items:[{menuItemId,quantity,notes}]}` replaces all Draft lines; returns order | Admin, Manager, Staff |
+| `POST /api/orders/{id}/send` | Draft to Sent; deducts stock and creates a Queued ticket; returns order | Admin, Manager, Staff |
+| `GET /api/kitchen/tickets` | All kitchen tickets, newest first | Authenticated |
+| `POST /api/kitchen/tickets/{id}/prepare` | Queued to Preparing; returns ticket | Admin, Manager, Kitchen |
+| `POST /api/kitchen/tickets/{id}/ready` | Preparing to Ready; returns ticket | Admin, Manager, Kitchen |
+| `POST /api/orders/{id}/complete` | Sent to Completed, only after ticket is Ready; returns order | Admin, Manager, Kitchen |
 | `POST /api/orders/{id}/cancel` | `{reason,stockDisposition}`; returns order | Admin, Manager, Staff for Draft; Admin, Manager for Sent/Completed |
 | `POST /api/orders/{id}/payments` | `{method:"Cash"}` or `{method:"Card"}`; Completed to Paid; returns order | Admin, Manager, Staff |
 | `GET /api/sales` | `{ordersPaid,total}` over all recorded payments | Admin, Manager |
 
-An order is `{id,tableId,status,createdAt,items:[{menuItemId,name,quantity,unitPrice}],total,payment,cancelledAt,cancelledBy,cancellationReason,cancellationStockDisposition}`; `payment` is null or `{id,method,amount,paidAt}`, and cancellation fields are null until cancellation. Prices and names are captured at order creation. A table is occupied while its order is Draft, Sent, or Completed; a concurrent second active order for the same table is rejected with 409. Payment or cancellation releases the table.
+An order is `{id,tableId,status,createdAt,items:[{menuItemId,name,quantity,unitPrice,notes}],total,payment,cancelledAt,cancelledBy,cancellationReason,cancellationStockDisposition}`; `tableId` is null for takeaway, `payment` is null or `{id,method,amount,paidAt}`, and cancellation fields are null until cancellation. Notes are optional strings of at most 300 characters. Prices and names are captured when a line is first added; editing a retained line preserves its snapshot, and a removed and re-added line uses the current menu values. Unavailable items can be retained or reduced, but cannot be added or increased. Editing is restricted to Draft orders. A table is occupied while its dine-in order is Draft, Sent, or Completed; a concurrent second active order for the same table is rejected with 409. Payment or cancellation releases the table. Takeaway orders do not occupy a table.
+
+A ticket is `{id,orderId,tableId,status,createdAt,isReconstructed,items:[{menuItemId,name,quantity,unitPrice,notes}]}`. Its items are immutable snapshots made when the order is sent; sending, stock deduction and ticket creation are one transaction. Kitchen transitions must be in order: Queued, Preparing, Ready. Completing an order requires Ready. Cancelling an order also marks its ticket Cancelled. Order revisions detect concurrent edits and kitchen transitions; refresh after a 409.
 
 Sending uses the recipe configured at **send time**. No recipe means no stock deduction for that item. Configured ingredients are aggregated and checked before any deduction. Stock, send, cancellation, completion, recipe changes, and payment use serializable transactions; concurrent conflicts must be retried after refreshing. A unique payment per order, unique active order per table, state transitions, movement uniqueness, and nonnegative stock constraints provide additional safeguards.
 
@@ -77,4 +85,4 @@ Payments are **simulated only**; this is **not IRD certified** and is not suitab
 
 `dotnet test Aahar.Tests/Aahar.Tests.csproj` runs isolated domain/mapping and HTTP cookie, CSRF, and role tests without a PostgreSQL connection. Before operational use, run end-to-end migration, transaction/concurrency, and recovery tests against a separately provisioned disposable database with explicit approval. The included tests do not verify PostgreSQL concurrency or migrations against a live server.
 
-This is an intentionally incomplete portfolio foundation: no order editing or refunds, user management beyond creation, password reset/revocation, reporting filters, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.
+This is an intentionally incomplete portfolio foundation: no post-send order editing, refunds, user management beyond creation, password reset/revocation, reporting filters, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.

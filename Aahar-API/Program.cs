@@ -94,6 +94,10 @@ app.Use(async (context, next) =>
     {
         await Results.Problem(statusCode: 403, title: "Forbidden").ExecuteAsync(context);
     }
+    catch (DbUpdateConcurrencyException)
+    {
+        await Results.Problem(statusCode: 409, title: "Conflict", detail: "The order changed. Refresh and retry.").ExecuteAsync(context);
+    }
     catch (Exception ex) when (ex is DbUpdateException { InnerException: PostgresException { SqlState: "23505" or "40001" or "40P01" } }
         or PostgresException { SqlState: "40001" or "40P01" })
     {
@@ -141,10 +145,14 @@ api.MapGet("/menu/{id:int}/recipe", (int id, IRestaurantService s, CancellationT
 api.MapPut("/menu/{id:int}/recipe", async (int id, RecipeRequest r, IRestaurantService s, CancellationToken ct) => { await s.SetRecipeAsync(id, r, ct); return Results.NoContent(); }).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/orders", (IRestaurantService s, CancellationToken ct) => s.OrdersAsync(ct));
 api.MapPost("/orders", (CreateOrderRequest r, IRestaurantService s, CancellationToken ct) => s.CreateOrderAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
+api.MapPut("/orders/{id:int}/items", (int id, EditOrderItemsRequest r, IRestaurantService s, CancellationToken ct) => s.EditOrderItemsAsync(id, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/orders/{id:int}/send", (int id, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.SendOrderAsync(id, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/orders/{id:int}/complete", (int id, IRestaurantService s, CancellationToken ct) => s.CompleteOrderAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
 api.MapPost("/orders/{id:int}/cancel", (int id, CancelOrderRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.CancelOrderAsync(id, r, user.Identity!.Name!, user.FindFirstValue(ClaimTypes.Role)!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/orders/{id:int}/payments", (int id, PaymentRequest r, IRestaurantService s, CancellationToken ct) => s.PayAsync(id, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
+api.MapGet("/kitchen/tickets", (IRestaurantService s, CancellationToken ct) => s.KitchenTicketsAsync(ct));
+api.MapPost("/kitchen/tickets/{id:int}/prepare", (int id, IRestaurantService s, CancellationToken ct) => s.PrepareTicketAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
+api.MapPost("/kitchen/tickets/{id:int}/ready", (int id, IRestaurantService s, CancellationToken ct) => s.ReadyTicketAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
 api.MapGet("/sales", (IRestaurantService s, CancellationToken ct) => s.SalesAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 app.Run();
 

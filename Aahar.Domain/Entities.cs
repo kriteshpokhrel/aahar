@@ -60,10 +60,11 @@ public sealed class RecipeIngredient
 public sealed class Order
 {
     public int Id { get; set; }
-    public int TableId { get; set; }
-    public DiningTable Table { get; set; } = null!;
+    public int? TableId { get; set; }
+    public DiningTable? Table { get; set; }
     public string Status { get; set; } = "Draft";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public long Revision { get; set; }
     public int? ConsumptionMovementCount { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancelledBy { get; set; }
@@ -71,6 +72,7 @@ public sealed class Order
     public string? CancellationStockDisposition { get; set; }
     public List<OrderItem> Items { get; set; } = [];
     public Payment? Payment { get; set; }
+    public KitchenTicket? Ticket { get; set; }
 }
 
 public sealed class OrderItem
@@ -83,7 +85,33 @@ public sealed class OrderItem
     public string Name { get; set; } = "";
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public string? Notes { get; set; }
 }
+
+public sealed class KitchenTicket
+{
+    public int Id { get; set; }
+    public int OrderId { get; set; }
+    public Order Order { get; set; } = null!;
+    public string Status { get; set; } = "Queued";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsReconstructed { get; set; }
+    public List<KitchenTicketItem> Items { get; set; } = [];
+}
+
+public sealed class KitchenTicketItem
+{
+    public int Id { get; set; }
+    public int KitchenTicketId { get; set; }
+    public KitchenTicket Ticket { get; set; } = null!;
+    public int MenuItemId { get; set; }
+    public string Name { get; set; } = "";
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public string? Notes { get; set; }
+}
+
+public record DraftLine(int MenuItemId, int Quantity, string? Notes);
 
 public sealed class Payment
 {
@@ -97,6 +125,50 @@ public sealed class Payment
 
 public static class OrderRules
 {
+    public static void SetDraftItems(Order order, IReadOnlyList<DraftLine> lines, IReadOnlyDictionary<int, MenuItem> menu)
+    {
+        RequireTransition(order.Status, "Draft");
+        if (lines.Count is < 1 or > 100 || lines.Any(x => x is null || x.MenuItemId <= 0 ||
+            x.Quantity is < 1 or > 1000 || (x.Notes?.Length ?? 0) > 300) ||
+            lines.Select(x => x.MenuItemId).Distinct().Count() != lines.Count)
+            throw new DomainException("Invalid order items.");
+
+        var existing = order.Items.ToDictionary(x => x.MenuItemId);
+        decimal total = 0;
+        foreach (var line in lines)
+        {
+            if (!menu.TryGetValue(line.MenuItemId, out var item))
+                throw new DomainException("A menu item is missing.");
+            existing.TryGetValue(line.MenuItemId, out var previous);
+            if (!item.IsAvailable && (previous is null || line.Quantity > previous.Quantity))
+                throw new DomainException("A menu item is unavailable.");
+            total += (previous?.UnitPrice ?? item.Price) * line.Quantity;
+        }
+        if (total > 999999999999.99m) throw new DomainException("Order total exceeds the maximum.");
+        Touch(order);
+
+        var updated = new List<OrderItem>();
+        foreach (var line in lines)
+        {
+            var item = existing.GetValueOrDefault(line.MenuItemId) ?? new OrderItem
+            {
+                MenuItemId = line.MenuItemId,
+                Name = menu[line.MenuItemId].Name,
+                UnitPrice = menu[line.MenuItemId].Price
+            };
+            item.Quantity = line.Quantity;
+            item.Notes = line.Notes;
+            updated.Add(item);
+        }
+        order.Items = updated;
+    }
+
+    public static void Touch(Order order)
+    {
+        if (order.Revision == long.MaxValue) throw new DomainException("Order revision exceeds the maximum.");
+        order.Revision++;
+    }
+
     public static void RequireTransition(string current, string expected)
     {
         if (current != expected) throw new DomainException($"Order must be {expected}.");
@@ -129,6 +201,8 @@ public static class OrderRules
     {
         if (order.Status is not ("Draft" or "Sent" or "Completed"))
             throw new DomainException("Only unpaid active orders can be cancelled.");
+        if (order.Ticket?.Status == "Cancelled")
+            throw new DomainException("Kitchen ticket is already cancelled.");
         if (role is not ("Admin" or "Manager" or "Staff"))
             throw new ForbiddenException();
         if (order.Status != "Draft" && role is not ("Admin" or "Manager"))
@@ -149,6 +223,7 @@ public static class OrderRules
         foreach (var movement in toReturn)
             if (movement.Ingredient.Stock - movement.QuantityChange > 99999999999.999m)
                 throw new DomainException($"Stock exceeds the maximum for {movement.Ingredient.Name}.");
+        Touch(order);
         var reversals = new List<StockMovement>();
         foreach (var movement in toReturn)
         {
@@ -158,11 +233,40 @@ public static class OrderRules
                 Kind = "Cancellation", QuantityChange = -movement.QuantityChange, BalanceAfter = ingredient.Stock, Actor = actor });
         }
         order.Status = "Cancelled";
+        if (order.Ticket is not null) order.Ticket.Status = "Cancelled";
         order.CancellationReason = reason.Trim();
         order.CancellationStockDisposition = disposition;
         order.CancelledBy = actor;
         order.CancelledAt = DateTime.UtcNow;
         return reversals;
+    }
+}
+
+public static class KitchenRules
+{
+    public static KitchenTicket CreateTicket(Order order)
+    {
+        OrderRules.RequireTransition(order.Status, "Draft");
+        return new KitchenTicket { OrderId = order.Id, Items = order.Items.Select(x => new KitchenTicketItem {
+            MenuItemId = x.MenuItemId, Name = x.Name, Quantity = x.Quantity, UnitPrice = x.UnitPrice, Notes = x.Notes
+        }).ToList() };
+    }
+
+    public static void Transition(KitchenTicket ticket, string from, string to)
+    {
+        OrderRules.RequireTransition(ticket.Order.Status, "Sent");
+        OrderRules.RequireTransition(ticket.Status, from);
+        OrderRules.Touch(ticket.Order);
+        ticket.Status = to;
+    }
+
+    public static void Complete(Order order)
+    {
+        OrderRules.RequireTransition(order.Status, "Sent");
+        if (order.Ticket is null) throw new DomainException("Kitchen ticket is missing.");
+        OrderRules.RequireTransition(order.Ticket.Status, "Ready");
+        OrderRules.Touch(order);
+        order.Status = "Completed";
     }
 }
 

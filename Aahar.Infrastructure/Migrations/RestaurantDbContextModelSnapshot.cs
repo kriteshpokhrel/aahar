@@ -77,6 +77,80 @@ namespace Aahar.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsReconstructed")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.ToTable("KitchenTickets", t =>
+                        {
+                            t.HasCheckConstraint("CK_KitchenTickets_Status", "\"Status\" IN ('Queued', 'Preparing', 'Ready', 'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Aahar.Domain.KitchenTicketItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("KitchenTicketId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MenuItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KitchenTicketId", "MenuItemId")
+                        .IsUnique();
+
+                    b.ToTable("KitchenTicketItem", t =>
+                        {
+                            t.HasCheckConstraint("CK_KitchenTicketItems_Values", "\"Quantity\" > 0 AND \"UnitPrice\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Aahar.Domain.MenuItem", b =>
                 {
                     b.Property<int>("Id")
@@ -143,12 +217,16 @@ namespace Aahar.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<int>("TableId")
+                    b.Property<int?>("TableId")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
@@ -156,7 +234,7 @@ namespace Aahar.Infrastructure.Migrations
                     b.HasIndex("TableId")
                         .IsUnique()
                         .HasDatabaseName("IX_Orders_ActiveTable")
-                        .HasFilter("\"Status\" IN ('Draft', 'Sent', 'Completed')");
+                        .HasFilter("\"TableId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Sent', 'Completed')");
 
                     b.ToTable("Orders");
                 });
@@ -176,6 +254,10 @@ namespace Aahar.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.Property<int>("OrderId")
                         .HasColumnType("integer");
@@ -334,13 +416,34 @@ namespace Aahar.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
+                {
+                    b.HasOne("Aahar.Domain.Order", "Order")
+                        .WithOne("Ticket")
+                        .HasForeignKey("Aahar.Domain.KitchenTicket", "OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.KitchenTicketItem", b =>
+                {
+                    b.HasOne("Aahar.Domain.KitchenTicket", "Ticket")
+                        .WithMany("Items")
+                        .HasForeignKey("KitchenTicketId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Ticket");
+                });
+
             modelBuilder.Entity("Aahar.Domain.Order", b =>
                 {
                     b.HasOne("Aahar.Domain.DiningTable", "Table")
                         .WithMany()
                         .HasForeignKey("TableId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Table");
                 });
@@ -412,6 +515,11 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Aahar.Domain.MenuItem", b =>
                 {
                     b.Navigation("Recipe");
@@ -422,6 +530,8 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Items");
 
                     b.Navigation("Payment");
+
+                    b.Navigation("Ticket");
                 });
 #pragma warning restore 612, 618
         }
