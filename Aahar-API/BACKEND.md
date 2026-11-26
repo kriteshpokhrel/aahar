@@ -2,6 +2,8 @@
 
 Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Core, Mapster, cookie authentication, and antiforgery. `Aahar.Domain` holds entities and rules; `Aahar.Application` defines contracts; `Aahar.Infrastructure` implements persistence and services; `Aahar-API` is the HTTP host. The original SQL Server scaffold under `Aahar-API/Data`, `Models`, and `Repository` is retained for reference but excluded from compilation.
 
+See [architecture](ARCHITECTURE.md), [security assumptions](SECURITY.md), and [operations and recovery](OPERATIONS.md) for design and operator guidance.
+
 ## Setup
 
 No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review all migrations in `Aahar.Infrastructure/Migrations` and the generated SQL before applying them. The initial migration's `Down` drops tables; later migrations refuse rollback because it would destroy history. Do not apply changes to any database or run rollback commands without explicit approval and a backup.
