@@ -6,9 +6,10 @@ import {
   Minus, Package, Plus, Search, ShoppingBag, Sparkles, Store, UtensilsCrossed, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
-import type { MenuItem, Order, Table, User } from './api'
+import type { MenuItem, Order, PaymentMethod, StockDisposition, Table, User } from './api'
 import { demoMenu, demoOrders, demoTables } from './demo'
 import { Inventory, MenuEditor, SalesReport, TableEditor } from './Management'
+import { OrderTicket } from './OrderTicket'
 import './App.css'
 
 type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest'
@@ -24,6 +25,22 @@ const navigation: { id: Page; label: string; icon: typeof Grid2X2 }[] = [
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'reports', label: 'Reports', icon: ClipboardList },
 ]
+
+async function fetchWorkspace(guest: boolean) {
+  if (guest) return { menu: await api.guestMenu(), tables: undefined, orders: undefined, errors: '' }
+  const [menu, tables, orders] = await Promise.allSettled([api.menu(), api.tables(), api.orders()])
+  const errors = [
+    menu.status === 'rejected' ? `Menu: ${message(menu.reason)}` : '',
+    tables.status === 'rejected' ? `Tables: ${message(tables.reason)}` : '',
+    orders.status === 'rejected' ? `Orders: ${message(orders.reason)}` : '',
+  ].filter(Boolean).join(' ')
+  return {
+    menu: menu.status === 'fulfilled' ? menu.value : undefined,
+    tables: tables.status === 'fulfilled' ? tables.value : undefined,
+    orders: orders.status === 'fulfilled' ? orders.value : undefined,
+    errors,
+  }
+}
 
 function Brand({ light = false }: { light?: boolean }) {
   return <div className={`brand ${light ? 'brand-light' : ''}`}><span className="brand-mark"><UtensilsCrossed size={19} strokeWidth={1.8} /></span><span>aahar<span className="brand-dot">.</span><small>RESTAURANT WORKSPACE</small></span></div>
@@ -56,7 +73,7 @@ function App() {
   const [menu, setMenu] = useState<MenuItem[]>(sampleGuest ? demoMenu : [])
   const [tables, setTables] = useState<Table[]>([])
   const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(guestPath && !sampleGuest)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [cart, setCart] = useState<Cart>({})
@@ -67,45 +84,50 @@ function App() {
 
   useEffect(() => {
     if (guestPath) return
-    api.me().then(setUser).catch((e: unknown) => {
+    api.me().then(currentUser => { setLoading(true); setUser(currentUser) }).catch((e: unknown) => {
       if (!(e instanceof ApiError && e.status === 401)) setError(message(e))
     }).finally(() => setChecking(false))
   }, [guestPath])
 
+  const applyWorkspace = useCallback((data: Awaited<ReturnType<typeof fetchWorkspace>>) => {
+    if (data.menu) setMenu(data.menu)
+    if (data.tables) setTables(data.tables)
+    if (data.orders) setOrders(data.orders)
+    setError(data.errors)
+  }, [])
   const refresh = useCallback(async () => {
     if (demo || sampleGuest || (!user && !guestPath)) return
     setLoading(true); setError('')
-    try {
-      if (guestPath) setMenu(await api.guestMenu())
-      else {
-        const [menuResult, tableResult, orderResult] = await Promise.allSettled([api.menu(), api.tables(), api.orders()])
-        const failures: string[] = []
-        if (menuResult.status === 'fulfilled') setMenu(menuResult.value)
-        else failures.push(`Menu: ${message(menuResult.reason)}`)
-        if (tableResult.status === 'fulfilled') setTables(tableResult.value)
-        else failures.push(`Tables: ${message(tableResult.reason)}`)
-        if (orderResult.status === 'fulfilled') setOrders(orderResult.value)
-        else failures.push(`Orders: ${message(orderResult.reason)}`)
-        if (failures.length) setError(failures.join(' '))
-      }
-    } catch (e) { setError(message(e)) } finally { setLoading(false) }
-  }, [demo, user, guestPath, sampleGuest])
-  useEffect(() => { void refresh() }, [refresh])
+    try { applyWorkspace(await fetchWorkspace(guestPath)) }
+    catch (e) { setError(message(e)) } finally { setLoading(false) }
+  }, [applyWorkspace, demo, sampleGuest, user, guestPath])
+  useEffect(() => {
+    if (demo || sampleGuest || (!user && !guestPath)) return
+    let active = true
+    void fetchWorkspace(guestPath).then(data => { if (active) applyWorkspace(data) })
+      .catch(e => { if (active) setError(message(e)) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [applyWorkspace, demo, sampleGuest, user, guestPath])
 
   function startDemo() {
-    setDemo(true); setUser({ username: 'Sample user', role: 'Demo' }); setMenu(demoMenu); setTables(demoTables); setOrders(demoOrders); setError('')
+    setDemo(true); setUser({ username: 'Sample user', role: 'Demo' }); setMenu(demoMenu); setTables(demoTables); setOrders(demoOrders); setError(''); setLoading(false)
   }
   async function signOut() {
     if (!demo) {
       try { await api.logout() } catch (e) { setError(message(e)); return }
     }
-    setUser(null); setDemo(false); setMenu([]); setTables([]); setOrders([]); setCart({}); setPage('pos')
+    setUser(null); setDemo(false); setMenu([]); setTables([]); setOrders([]); setCart({}); setPage('pos'); setLoading(false)
   }
   const categories = useMemo(() => ['All items', ...new Set(menu.map(item => item.category).filter((value): value is string => !!value))], [menu])
   const visibleMenu = menu.filter(item => item.isAvailable && (category === 'All items' || item.category === category) && `${item.name} ${item.description ?? ''}`.toLowerCase().includes(search.toLowerCase()))
   const cartItems = menu.filter(item => cart[item.id] > 0)
   const total = cartItems.reduce((sum, item) => sum + item.price * cart[item.id], 0)
   const itemCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0)
+  const isOccupied = (table: Table) => demo
+    ? orders.some(order => order.tableId === table.id && ['draft', 'sent', 'completed'].includes(order.status.toLowerCase()))
+    : table.isOccupied
+  const selectedTable = tables.find(table => table.id === tableId)
   function changeQuantity(id: number, amount: number) {
     setCart(current => {
       const next = { ...current, [id]: Math.max(0, (current[id] ?? 0) + amount) }
@@ -114,12 +136,12 @@ function App() {
     })
   }
   async function createOrder() {
-    if (!itemCount || tableId === null) return
+    if (!itemCount || tableId === null || !selectedTable || isOccupied(selectedTable)) return
     setBusy(true); setError(''); setNotice('')
     try {
       const items = cartItems.map(item => ({ menuItemId: item.id, quantity: cart[item.id] }))
       if (demo) {
-        const order: Order = { id: Math.max(100, ...orders.map(o => o.id)) + 1, tableId, status: 'Draft', createdAt: new Date().toISOString(), items: cartItems.map(item => ({ menuItemId: item.id, name: item.name, quantity: cart[item.id], unitPrice: item.price })), total }
+        const order: Order = { id: Math.max(100, ...orders.map(o => o.id)) + 1, tableId, status: 'Draft', createdAt: new Date().toISOString(), items: cartItems.map(item => ({ menuItemId: item.id, name: item.name, quantity: cart[item.id], unitPrice: item.price })), total, payment: null }
         setOrders(current => [order, ...current])
       } else {
         await api.createOrder(tableId, items)
@@ -128,22 +150,38 @@ function App() {
       if (!demo) await refresh()
     } catch (e) { setError(message(e)) } finally { setBusy(false) }
   }
-  async function updateOrder(order: Order, action: 'send' | 'complete' | 'pay') {
+  async function updateOrder(order: Order, action: 'send' | 'complete' | 'pay', method: PaymentMethod = 'Cash') {
     setBusy(true); setError(''); setNotice('')
     try {
-      if (demo) setOrders(current => current.map(item => item.id === order.id ? { ...item, status: action === 'send' ? 'Sent' : action === 'complete' ? 'Completed' : 'Paid' } : item))
+      if (demo) setOrders(current => current.map(item => item.id === order.id ? { ...item, status: action === 'send' ? 'Sent' : action === 'complete' ? 'Completed' : 'Paid', payment: action === 'pay' ? { id: order.id, method, amount: order.total, paidAt: new Date().toISOString() } : item.payment } : item))
       else {
         if (action === 'send') await api.sendOrder(order.id)
         if (action === 'complete') await api.completeOrder(order.id)
-        if (action === 'pay') await api.payOrder(order.id, 'Cash')
+        if (action === 'pay') await api.payOrder(order.id, method)
         await refresh()
       }
       setNotice(action === 'pay' ? 'Payment recorded as a simulation; no money was collected.' : 'Order updated.')
     } catch (e) { setError(message(e)) } finally { setBusy(false) }
   }
+  async function cancelOrder(order: Order, reason: string, stockDisposition: StockDisposition): Promise<boolean> {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      if (demo) {
+        setOrders(current => current.map(item => item.id === order.id ? {
+          ...item, status: 'Cancelled', cancelledAt: new Date().toISOString(),
+          cancelledBy: 'Sample user', cancellationReason: reason, cancellationStockDisposition: stockDisposition,
+        } : item))
+      } else {
+        await api.cancelOrder(order.id, reason, stockDisposition)
+        await refresh()
+      }
+      setNotice('Order cancelled. The table is released.')
+      return true
+    } catch (e) { setError(message(e)); return false } finally { setBusy(false) }
+  }
 
   if (checking) return <div className="full-message">Opening Aahar…</div>
-  if (!user && !guestPath) return <><SignIn onLogin={setUser} onDemo={startDemo} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
+  if (!user && !guestPath) return <><SignIn onLogin={currentUser => { setLoading(true); setUser(currentUser) }} onDemo={startDemo} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
   if (guestPath) return <GuestMenu menu={menu} loading={loading} error={error} retry={refresh} sample={sampleGuest} />
 
   const title = navigation.find(item => item.id === page)?.label ?? 'Guest menu'
@@ -160,9 +198,9 @@ function App() {
         {page === 'pos' && <><div className="page-heading"><div><div className="eyebrow">YOUR SERVICE, IN ONE PLACE</div><h1>Point of sale<span className="heading-dot">.</span></h1><p>Let’s get something good to the table.</p></div><div className="shift-label"><span className="shift-icon"><Clock3 size={17} /></span><span><small>CURRENT WORKSPACE</small><strong>{demo ? 'Sample service' : 'Restaurant service'}</strong></span></div></div>
           <div className="pos-layout"><section className="menu-panel"><div className="section-heading"><div><span className="eyebrow">THE MENU</span><h2>What are we serving?</h2></div><span className="count-label">{visibleMenu.length} items</span></div><div className="menu-tools"><div className="categories" aria-label="Menu categories">{categories.map(c => <button key={c} className={category === c ? 'selected' : ''} onClick={() => setCategory(c)}>{c}</button>)}</div><label className="search"><Search size={17} /><span className="sr-only">Search menu</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search menu..." /></label></div>
             <div className="item-grid">{visibleMenu.map((item, index) => <button className="menu-card" key={item.id} onClick={() => changeQuantity(item.id, 1)}><div className={`item-art art-${index % 4}`} aria-hidden="true"><span>{item.name.slice(0, 1)}</span><i /><b /></div><div className="item-details"><div className="item-category">{item.category || 'FROM THE MENU'}</div><strong>{item.name}</strong><p>{item.description || 'Made fresh to order'}</p><div className="item-bottom"><span>{money(item.price)}</span><span className="add-circle" aria-label={`Add ${item.name}`}><Plus size={16} /></span></div></div></button>)}</div>{!loading && !visibleMenu.length && <Empty title="Nothing on the menu yet" text={search || category !== 'All items' ? 'Try another search or category.' : 'Available menu items will appear here.'} />}</section>
-            <aside className="order-panel"><div className="order-head"><div><span className="eyebrow">CURRENT ORDER</span><h2>Order details</h2></div><span className="order-icon"><ShoppingBag size={18} /></span></div><div className="order-type"><span><span className="type-icon"><UtensilsCrossed size={16} /></span> Dine in</span><label><span className="sr-only">Select table</span><select value={tableId ?? ''} onChange={e => setTableId(e.target.value ? Number(e.target.value) : null)}><option value="">Select table</option>{tables.map(table => <option key={table.id} value={table.id}>{table.number}</option>)}</select><ChevronDown size={14} /></label></div><div className="order-lines">{cartItems.length ? cartItems.map(item => <div className="order-line" key={item.id}><div><strong>{item.name}</strong><small>{money(item.price)} each</small></div><div className="line-right"><strong>{money(item.price * cart[item.id])}</strong><div className="stepper"><button onClick={() => changeQuantity(item.id, -1)} aria-label={`Remove one ${item.name}`}><Minus size={13} /></button><span>{cart[item.id]}</span><button onClick={() => changeQuantity(item.id, 1)} aria-label={`Add one ${item.name}`}><Plus size={13} /></button></div></div></div>) : <div className="empty-order"><span><ShoppingBag size={22} strokeWidth={1.4} /></span><strong>A fresh start</strong><p>Choose an item from the menu<br />to begin an order.</p></div>}</div><div className="order-footer"><div className="summary-line"><span>Items</span><span>{itemCount}</span></div><div className="summary-line total-line"><strong>Total</strong><strong>{money(total)}</strong></div><p className="tax-note">Final totals are determined by the server.</p><button className="button primary wide" disabled={!itemCount || tableId === null || busy || !canServe} onClick={() => void createOrder()}>{busy ? 'Creating order…' : 'Create order'} <ArrowRight size={17} /></button><p className="order-hint">{!canServe ? 'Your role cannot create orders.' : tableId === null ? 'Select a table to create an order.' : 'Review your order before sending it to the kitchen.'}</p></div></aside></div></>}
-        {page === 'tables' && <><PageHeading eyebrow="THE FLOOR" title="Tables" text="A clear view of your dining room." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">FLOOR OVERVIEW</span><h2>Your tables</h2></div><span className="count-label">{tables.length} tables</span></div>{canManage && <TableEditor refresh={refresh} />}<div className="table-grid">{tables.map(table => { const active = orders.some(o => o.tableId === table.id && !['paid', 'cancelled'].includes(o.status.toLowerCase())); return <button key={table.id} className="table-card" onClick={() => { setTableId(table.id); setPage('pos') }}><div className="table-card-top"><span className="table-symbol"><Grid2X2 size={20} /></span><span className={`status ${active ? 'status-busy' : ''}`}>{active ? 'Active order' : 'No active order'}</span></div><strong>Table {table.number}</strong><small>{table.capacity} seats</small><span className="table-action">Start an order <ArrowRight size={14} /></span></button> })}</div>{!loading && !tables.length && <Empty title="No tables found" text="Tables will appear here when available." />}</div></>}
-        {page === 'kitchen' && <><PageHeading eyebrow="KEEP THINGS MOVING" title="Kitchen" text="Orders and their progress, at a glance." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">ORDER QUEUE</span><h2>On the pass</h2></div><span className="count-label">{orders.length} orders</span></div><div className="ticket-grid">{orders.map(order => <article className="ticket" key={order.id}><div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{tables.find(t => t.id === order.tableId) ? `Table ${tables.find(t => t.id === order.tableId)?.number}` : 'Unassigned table'}</h3></div><span className="status status-busy">{order.status}</span></div><div className="ticket-items">{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span><b>{item.quantity}×</b> {item.name}</span><span>{money(item.quantity * item.unitPrice)}</span></div>)}</div><div className="ticket-bottom"><span>{money(order.total)}</span><div className="ticket-actions">{canServe && order.status.toLowerCase() === 'draft' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'send')}>Send to kitchen</button>}{canComplete && order.status.toLowerCase() === 'sent' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'complete')}>Mark complete</button>}{canServe && order.status.toLowerCase() === 'completed' && <button className="button small secondary" disabled={busy} onClick={() => void updateOrder(order, 'pay')}>Simulate cash payment</button>}</div></div></article>)}</div>{!loading && !orders.length && <Empty title="All caught up" text="New orders will show up here." />}</div></>}
+            <aside className="order-panel"><div className="order-head"><div><span className="eyebrow">CURRENT ORDER</span><h2>Order details</h2></div><span className="order-icon"><ShoppingBag size={18} /></span></div><div className="order-type"><span><span className="type-icon"><UtensilsCrossed size={16} /></span> Dine in</span><label><span className="sr-only">Select table</span><select value={tableId ?? ''} onChange={e => setTableId(e.target.value ? Number(e.target.value) : null)}><option value="">Select table</option>{tables.map(table => <option key={table.id} value={table.id} disabled={isOccupied(table)}>Table {table.number}{isOccupied(table) ? ' · occupied' : ''}</option>)}</select><ChevronDown size={14} /></label></div><div className="order-lines">{cartItems.length ? cartItems.map(item => <div className="order-line" key={item.id}><div><strong>{item.name}</strong><small>{money(item.price)} each</small></div><div className="line-right"><strong>{money(item.price * cart[item.id])}</strong><div className="stepper"><button onClick={() => changeQuantity(item.id, -1)} aria-label={`Remove one ${item.name}`}><Minus size={13} /></button><span>{cart[item.id]}</span><button onClick={() => changeQuantity(item.id, 1)} aria-label={`Add one ${item.name}`}><Plus size={13} /></button></div></div></div>) : <div className="empty-order"><span><ShoppingBag size={22} strokeWidth={1.4} /></span><strong>A fresh start</strong><p>Choose an item from the menu<br />to begin an order.</p></div>}</div><div className="order-footer"><div className="summary-line"><span>Items</span><span>{itemCount}</span></div><div className="summary-line total-line"><strong>Total</strong><strong>{money(total)}</strong></div><p className="tax-note">Final totals are determined by the server.</p><button className="button primary wide" disabled={!itemCount || !selectedTable || isOccupied(selectedTable) || busy || !canServe} onClick={() => void createOrder()}>{busy ? 'Creating order…' : 'Create order'} <ArrowRight size={17} /></button><p className="order-hint">{!canServe ? 'Your role cannot create orders.' : !selectedTable ? 'Select a table to create an order.' : isOccupied(selectedTable) ? 'This table is occupied. Select another table.' : 'Review your order before sending it to the kitchen.'}</p></div></aside></div></>}
+        {page === 'tables' && <><PageHeading eyebrow="THE FLOOR" title="Tables" text="A clear view of your dining room." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">FLOOR OVERVIEW</span><h2>Your tables</h2></div><span className="count-label">{tables.length} tables</span></div>{canManage && <TableEditor refresh={refresh} />}<div className="table-grid">{tables.map(table => { const active = isOccupied(table); return <button key={table.id} className="table-card" disabled={active || !canServe} onClick={() => { setTableId(table.id); setPage('pos') }}><div className="table-card-top"><span className="table-symbol"><Grid2X2 size={20} /></span><span className={`status ${active ? 'status-busy' : ''}`}>{active ? 'Occupied' : 'Available'}</span></div><strong>Table {table.number}</strong><small>{table.capacity} seats</small><span className="table-action">{active ? 'In service' : canServe ? 'Start an order' : 'View only'} {!active && canServe && <ArrowRight size={14} />}</span></button> })}</div>{!loading && !tables.length && <Empty title="No tables found" text="Tables will appear here when available." />}</div></>}
+        {page === 'kitchen' && <><PageHeading eyebrow="KEEP THINGS MOVING" title="Kitchen" text="Orders and their progress, at a glance." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">ORDER QUEUE</span><h2>On the pass</h2></div><span className="count-label">{orders.length} orders</span></div><div className="ticket-grid">{orders.map(order => <OrderTicket key={order.id} order={order} tables={tables} busy={busy} canServe={canServe} canComplete={canComplete} canCancelSubmitted={demo || canManage} update={updateOrder} cancel={cancelOrder} />)}</div>{!loading && !orders.length && <Empty title="All caught up" text="New orders will show up here." />}</div></>}
         {page === 'menu' && <><PageHeading eyebrow="FOOD & DRINK" title="Your menu" text="Everything you’re serving, in one place." /><div className="surface"><div className="section-heading"><div><span className="eyebrow">MENU CATALOGUE</span><h2>All menu items</h2></div><span className="count-label">{menu.length} items</span></div>{canManage && <MenuEditor items={menu} refresh={refresh} />}<div className="list-table"><div className="list-header"><span>ITEM</span><span>AVAILABILITY</span><span>PRICE</span></div>{menu.map(item => <div className="list-row" key={item.id}><span><strong>{item.name}</strong><small>{item.description || item.category || 'Menu item'}</small></span><span><span className={`status ${item.isAvailable ? '' : 'status-busy'}`}>{item.isAvailable ? 'Available' : 'Unavailable'}</span></span><strong>{money(item.price)}</strong></div>)}</div>{!loading && !menu.length && <Empty title="No menu items found" text="Your menu will appear here when available." />}</div></>}
         {(page === 'inventory' || page === 'reports') && !canManage && <><PageHeading eyebrow={page === 'inventory' ? 'STOCK & SUPPLIES' : 'THE BIG PICTURE'} title={page === 'inventory' ? 'Inventory' : 'Reports'} text={page === 'inventory' ? 'Stay on top of what your kitchen needs.' : 'Make sense of your service.'} /><div className="surface placeholder"><span className="placeholder-icon">{page === 'inventory' ? <Package size={25} /> : <ClipboardList size={25} />}</span><span className="eyebrow">ACCESS & AVAILABILITY</span><h2>{demo ? 'Not available in sample mode.' : 'Manager access required.'}</h2><p>{demo ? 'Sample mode does not connect to inventory or sales data.' : 'Inventory and sales data are available to managers and administrators.'}</p></div></>}
         {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory /></>}

@@ -12,12 +12,12 @@ export const demoMenu: MenuItem[] = [
 ]
 
 export const demoTables: Table[] = [
-  { id: 1, number: 1, capacity: 2 }, { id: 2, number: 2, capacity: 4 },
-  { id: 3, number: 3, capacity: 4 }, { id: 4, number: 4, capacity: 6 },
-  { id: 5, number: 5, capacity: 2 }, { id: 6, number: 6, capacity: 4 },
+  { id: 1, number: 1, capacity: 2, isOccupied: false }, { id: 2, number: 2, capacity: 4, isOccupied: true },
+  { id: 3, number: 3, capacity: 4, isOccupied: false }, { id: 4, number: 4, capacity: 6, isOccupied: true },
+  { id: 5, number: 5, capacity: 2, isOccupied: false }, { id: 6, number: 6, capacity: 4, isOccupied: false },
 ]
 
 export const demoOrders: Order[] = [
-  { id: 104, tableId: 2, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 1, name: 'Chicken momo', quantity: 2, unitPrice: 320 }, { menuItemId: 7, name: 'Masala tea', quantity: 2, unitPrice: 120 }], total: 880 },
-  { id: 103, tableId: 4, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 5, name: 'Dal bhat set', quantity: 2, unitPrice: 420 }], total: 840 },
+  { id: 104, tableId: 2, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 1, name: 'Chicken momo', quantity: 2, unitPrice: 320 }, { menuItemId: 7, name: 'Masala tea', quantity: 2, unitPrice: 120 }], total: 880, payment: null },
+  { id: 103, tableId: 4, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 5, name: 'Dal bhat set', quantity: 2, unitPrice: 420 }], total: 840, payment: null },
 ]

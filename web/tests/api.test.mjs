@@ -23,10 +23,37 @@ test('session mutations obtain CSRF tokens, use same-origin credentials, and sur
       assert.equal(error.message, 'Table is unavailable')
       return true
     })
+
     assert.equal(calls.at(-1).options.headers.get('X-CSRF-TOKEN'), 'token-2')
     await api.logout()
     await api.login('staff', 'password')
     assert.equal(calls.filter(call => call.url === '/api/auth/csrf').length, 3)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('cancellation and card payment send the selected values to the API', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'token' })
+    return Response.json({ id: 7 })
+  }
+  try {
+    await api.cancelOrder(7, 'Guest changed their mind', 'Return')
+    await api.cancelOrder(8, 'Food discarded', 'Waste')
+    await api.cancelOrder(9, 'Mistake', 'None')
+    await api.payOrder(7, 'Card')
+    const mutations = calls.filter(call => call.options.method === 'POST')
+    assert.deepEqual(mutations.map(call => [call.url, JSON.parse(call.options.body)]), [
+      ['/api/orders/7/cancel', { reason: 'Guest changed their mind', stockDisposition: 'Return' }],
+      ['/api/orders/8/cancel', { reason: 'Food discarded', stockDisposition: 'Waste' }],
+      ['/api/orders/9/cancel', { reason: 'Mistake', stockDisposition: 'None' }],
+      ['/api/orders/7/payments', { method: 'Card' }],
+    ])
+    assert.ok(mutations.every(call => call.options.headers.get('X-CSRF-TOKEN') === 'token'))
   } finally {
     globalThis.fetch = originalFetch
   }

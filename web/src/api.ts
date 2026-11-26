@@ -11,6 +11,7 @@ export type Table = {
   id: number
   number: number
   capacity: number
+  isOccupied: boolean
 }
 
 export type Order = {
@@ -20,9 +21,16 @@ export type Order = {
   items: { menuItemId: number; name: string; quantity: number; unitPrice: number }[]
   total: number
   createdAt: string
+  payment: { id: number; method: string; amount: number; paidAt: string } | null
+  cancelledAt?: string | null
+  cancelledBy?: string | null
+  cancellationReason?: string | null
+  cancellationStockDisposition?: StockDisposition | null
 }
 
 export type User = { username: string; role: string }
+export type PaymentMethod = 'Cash' | 'Card'
+export type StockDisposition = 'None' | 'Return' | 'Waste'
 export type Ingredient = { id: number; name: string; unit: string; stock: number }
 export type Sales = { ordersPaid: number; total: number }
 export type MenuInput = { name: string; description: string | null; category: string; price: number; isAvailable: boolean }
@@ -78,7 +86,9 @@ export const api = {
     post<Order>('/orders', { tableId, items }),
   sendOrder: (id: number) => post(`/orders/${id}/send`),
   completeOrder: (id: number) => post(`/orders/${id}/complete`),
-  payOrder: (id: number, method: string) => post(`/orders/${id}/payments`, { method }),
+  payOrder: (id: number, method: PaymentMethod) => post<Order>(`/orders/${id}/payments`, { method }),
+  cancelOrder: (id: number, reason: string, stockDisposition: StockDisposition) =>
+    post<Order>(`/orders/${id}/cancel`, { reason, stockDisposition }),
   createMenuItem: (item: MenuInput) => post<MenuItem>('/menu', item),
   updateMenuItem: (id: number, item: MenuInput) => request<MenuItem>(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(item) }),
   createTable: (number: number, capacity: number) => post<Table>('/tables', { number, capacity }),
