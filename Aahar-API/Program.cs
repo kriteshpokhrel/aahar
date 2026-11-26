@@ -19,6 +19,17 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
+var businessZoneId = builder.Configuration["Business:TimeZone"];
+if (string.IsNullOrWhiteSpace(businessZoneId)) throw new InvalidOperationException("Set Business:TimeZone to the restaurant's time zone.");
+try
+{
+    builder.Services.AddSingleton(TimeZoneInfo.FindSystemTimeZoneById(businessZoneId));
+}
+catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+{
+    throw new InvalidOperationException("Business:TimeZone must identify a valid system time zone.", ex);
+}
+builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddProblemDetails();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
@@ -175,6 +186,8 @@ api.MapGet("/kitchen/tickets", (IRestaurantService s, CancellationToken ct) => s
 api.MapPost("/kitchen/tickets/{id:int}/prepare", (int id, IRestaurantService s, CancellationToken ct) => s.PrepareTicketAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
 api.MapPost("/kitchen/tickets/{id:int}/ready", (int id, IRestaurantService s, CancellationToken ct) => s.ReadyTicketAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Kitchen"));
 api.MapGet("/sales", (IRestaurantService s, CancellationToken ct) => s.SalesAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/reports/sales", (string? fromDate, string? toDate, IReportService s, CancellationToken ct) => s.PaidSalesAsync(BusinessDateRange.Parse(fromDate), BusinessDateRange.Parse(toDate), ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/reports/best-selling", (string? fromDate, string? toDate, int? limit, IReportService s, CancellationToken ct) => s.BestSellingAsync(BusinessDateRange.Parse(fromDate), BusinessDateRange.Parse(toDate), limit ?? 20, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 app.Run();
 
 public partial class Program;

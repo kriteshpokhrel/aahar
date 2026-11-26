@@ -303,6 +303,8 @@ public sealed class TestFactory : WebApplicationFactory<Program>
             services.AddScoped<IRestaurantService, FakeService>();
             services.RemoveAll<IGuestRequestService>();
             services.AddScoped<IGuestRequestService, FakeGuestService>();
+            services.RemoveAll<IReportService>();
+            services.AddScoped<IReportService, FakeReportService>();
         });
     }
 }
@@ -321,6 +323,7 @@ public sealed class FakeService : IRestaurantService
     public Task<UserDto?> AuthenticateAsync(LoginRequest r, CancellationToken ct) => Task.FromResult<UserDto?>(
         r.Password == "password" && r.Username == "admin" ? new("admin", "Admin") :
         r.Password == "password" && r.Username == "kitchen" ? new("kitchen", "Kitchen") :
+        r.Password == "password" && r.Username == "manager" ? new("manager", "Manager") :
         r.Password == "password" && r.Username == "staff" ? new("staff", "Staff") : null);
     public Task<UserDto> CreateUserAsync(CreateUserRequest r, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<MenuDto>> MenuAsync(bool a, CancellationToken ct) => throw new NotSupportedException();
