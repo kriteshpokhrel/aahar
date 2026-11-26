@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -17,6 +18,7 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
     services.GetRequiredService<IConfiguration>().GetConnectionString("Aahar")
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
+builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddProblemDetails();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
@@ -45,6 +47,8 @@ builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddFixedWindowLimiter("login", x => { x.PermitLimit = 5; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
+    o.AddFixedWindowLimiter("guest-submit", x => { x.PermitLimit = 5; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
+    o.AddFixedWindowLimiter("guest-status", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
 });
 
 var app = builder.Build();
@@ -94,9 +98,13 @@ app.Use(async (context, next) =>
     {
         await Results.Problem(statusCode: 403, title: "Forbidden").ExecuteAsync(context);
     }
+    catch (ConflictException ex)
+    {
+        await Results.Problem(statusCode: 409, title: "Conflict", detail: ex.Message).ExecuteAsync(context);
+    }
     catch (DbUpdateConcurrencyException)
     {
-        await Results.Problem(statusCode: 409, title: "Conflict", detail: "The order changed. Refresh and retry.").ExecuteAsync(context);
+        await Results.Problem(statusCode: 409, title: "Conflict", detail: "The record changed. Refresh and retry.").ExecuteAsync(context);
     }
     catch (Exception ex) when (ex is DbUpdateException { InnerException: PostgresException { SqlState: "23505" or "40001" or "40P01" } }
         or PostgresException { SqlState: "40001" or "40P01" })
@@ -130,7 +138,20 @@ auth.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new UserDto(user.Identit
 auth.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
 app.MapGet("/api/guest/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(true, ct));
+app.MapPost("/api/guest/requests", (SubmitGuestRequest r, IGuestRequestService s, CancellationToken ct) => s.SubmitAsync(r, ct))
+    .RequireRateLimiting("guest-submit").WithMetadata(new RequestSizeLimitAttribute(65536));
+app.MapGet("/api/guest/requests/{id:int}", async (int id, HttpContext ctx, IGuestRequestService s, CancellationToken ct) =>
+{
+    var status = await s.StatusAsync(id, ctx.Request.Headers["X-Guest-Request-Token"].ToString(), ct);
+    return status is null ? Results.NotFound() : Results.Ok(status);
+}).RequireRateLimiting("guest-status");
 var api = app.MapGroup("/api").RequireAuthorization();
+api.MapGet("/guest-requests", (string? status, int? beforeId, int? limit, IGuestRequestService s, CancellationToken ct) => s.ListAsync(status, beforeId, limit ?? 50, ct))
+    .RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
+api.MapPost("/guest-requests/{id:int}/accept", (int id, ClaimsPrincipal user, IGuestRequestService s, CancellationToken ct) => s.AcceptAsync(id, user.Identity!.Name!, ct))
+    .RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
+api.MapPost("/guest-requests/{id:int}/reject", (int id, RejectGuestRequest r, ClaimsPrincipal user, IGuestRequestService s, CancellationToken ct) => s.RejectAsync(id, r, user.Identity!.Name!, ct))
+    .RequireAuthorization(p => p.RequireRole("Admin", "Manager", "Staff"));
 api.MapPost("/users", (CreateUserRequest r, IRestaurantService s, CancellationToken ct) => s.CreateUserAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin"));
 api.MapGet("/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(false, ct));
 api.MapPost("/menu", (MenuRequest r, IRestaurantService s, CancellationToken ct) => s.SaveMenuAsync(null, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));

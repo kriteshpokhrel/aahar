@@ -44,6 +44,106 @@ namespace Aahar.Infrastructure.Migrations
                     b.ToTable("Tables");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.GuestRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<byte[]>("AccessTokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("OrderId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("TableId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasFilter("\"OrderId\" IS NOT NULL");
+
+                    b.HasIndex("TableId");
+
+                    b.ToTable("GuestRequests", t =>
+                        {
+                            t.HasCheckConstraint("CK_GuestRequests_Decision", "(\"Status\" = 'Pending' AND \"DecidedAt\" IS NULL AND \"DecidedBy\" IS NULL AND \"OrderId\" IS NULL AND \"RejectionReason\" IS NULL) OR (\"Status\" = 'Accepted' AND \"DecidedAt\" IS NOT NULL AND \"DecidedBy\" IS NOT NULL AND \"OrderId\" IS NOT NULL AND \"RejectionReason\" IS NULL) OR (\"Status\" = 'Rejected' AND \"DecidedAt\" IS NOT NULL AND \"DecidedBy\" IS NOT NULL AND \"OrderId\" IS NULL AND \"RejectionReason\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_GuestRequests_Token", "octet_length(\"AccessTokenHash\") = 32");
+                        });
+                });
+
+            modelBuilder.Entity("Aahar.Domain.GuestRequestItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("GuestRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MenuItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("QuotedUnitPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MenuItemId");
+
+                    b.HasIndex("GuestRequestId", "MenuItemId")
+                        .IsUnique();
+
+                    b.ToTable("GuestRequestItem", t =>
+                        {
+                            t.HasCheckConstraint("CK_GuestRequestItems_Values", "\"Quantity\" > 0 AND \"QuotedUnitPrice\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Aahar.Domain.Ingredient", b =>
                 {
                     b.Property<int>("Id")
@@ -416,6 +516,42 @@ namespace Aahar.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.GuestRequest", b =>
+                {
+                    b.HasOne("Aahar.Domain.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Aahar.Domain.DiningTable", "Table")
+                        .WithMany()
+                        .HasForeignKey("TableId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Table");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.GuestRequestItem", b =>
+                {
+                    b.HasOne("Aahar.Domain.GuestRequest", "Request")
+                        .WithMany("Items")
+                        .HasForeignKey("GuestRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Aahar.Domain.MenuItem", "MenuItem")
+                        .WithMany()
+                        .HasForeignKey("MenuItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MenuItem");
+
+                    b.Navigation("Request");
+                });
+
             modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
                 {
                     b.HasOne("Aahar.Domain.Order", "Order")
@@ -513,6 +649,11 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Ingredient");
 
                     b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.GuestRequest", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>

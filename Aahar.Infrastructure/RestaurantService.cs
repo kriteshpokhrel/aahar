@@ -16,7 +16,7 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
     private static bool ValidText(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
     private static bool Money(decimal n) => n >= 0 && n <= 9999999999.99m && decimal.Round(n, 2) == n;
     private static bool Quantity(decimal n) => n >= 0 && n <= 99999999999.999m && decimal.Round(n, 3) == n;
-    private static OrderDto ToDto(Order order) => new(order.Id, order.TableId, order.Status, order.CreatedAt,
+    internal static OrderDto ToDto(Order order) => new(order.Id, order.TableId, order.Status, order.CreatedAt,
         order.Items.Adapt<List<OrderItemDto>>(), order.Items.Sum(x => x.UnitPrice * x.Quantity), order.Payment?.Adapt<PaymentDto>(),
         order.CancelledAt, order.CancelledBy, order.CancellationReason, order.CancellationStockDisposition);
     private static KitchenTicketDto ToTicketDto(KitchenTicket ticket) => new(ticket.Id, ticket.OrderId, ticket.Order.TableId,

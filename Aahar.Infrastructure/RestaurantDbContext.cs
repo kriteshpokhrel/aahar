@@ -13,6 +13,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<RecipeIngredient> Recipes => Set<RecipeIngredient>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<KitchenTicket> KitchenTickets => Set<KitchenTicket>();
+    public DbSet<GuestRequest> GuestRequests => Set<GuestRequest>();
     public DbSet<Payment> Payments => Set<Payment>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -71,6 +72,25 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         b.Entity<KitchenTicketItem>().HasOne(x => x.Ticket).WithMany(x => x.Items).HasForeignKey(x => x.KitchenTicketId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<KitchenTicketItem>().HasIndex(x => new { x.KitchenTicketId, x.MenuItemId }).IsUnique();
         b.Entity<KitchenTicketItem>().ToTable(t => t.HasCheckConstraint("CK_KitchenTicketItems_Values", "\"Quantity\" > 0 AND \"UnitPrice\" >= 0"));
+        b.Entity<GuestRequest>().Property(x => x.Status).HasMaxLength(20);
+        b.Entity<GuestRequest>().Property(x => x.Revision).IsConcurrencyToken();
+        b.Entity<GuestRequest>().Property(x => x.DecidedBy).HasMaxLength(100);
+        b.Entity<GuestRequest>().Property(x => x.RejectionReason).HasMaxLength(300);
+        b.Entity<GuestRequest>().HasOne(x => x.Table).WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<GuestRequest>().HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<GuestRequest>().HasIndex(x => x.OrderId).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
+        b.Entity<GuestRequest>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_GuestRequests_Token", "octet_length(\"AccessTokenHash\") = 32");
+            t.HasCheckConstraint("CK_GuestRequests_Decision", "(\"Status\" = 'Pending' AND \"DecidedAt\" IS NULL AND \"DecidedBy\" IS NULL AND \"OrderId\" IS NULL AND \"RejectionReason\" IS NULL) OR (\"Status\" = 'Accepted' AND \"DecidedAt\" IS NOT NULL AND \"DecidedBy\" IS NOT NULL AND \"OrderId\" IS NOT NULL AND \"RejectionReason\" IS NULL) OR (\"Status\" = 'Rejected' AND \"DecidedAt\" IS NOT NULL AND \"DecidedBy\" IS NOT NULL AND \"OrderId\" IS NULL AND \"RejectionReason\" IS NOT NULL)");
+        });
+        b.Entity<GuestRequestItem>().Property(x => x.Name).HasMaxLength(100);
+        b.Entity<GuestRequestItem>().Property(x => x.Notes).HasMaxLength(300);
+        b.Entity<GuestRequestItem>().Property(x => x.QuotedUnitPrice).HasPrecision(12, 2);
+        b.Entity<GuestRequestItem>().HasOne(x => x.Request).WithMany(x => x.Items).HasForeignKey(x => x.GuestRequestId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<GuestRequestItem>().HasOne(x => x.MenuItem).WithMany().HasForeignKey(x => x.MenuItemId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<GuestRequestItem>().HasIndex(x => new { x.GuestRequestId, x.MenuItemId }).IsUnique();
+        b.Entity<GuestRequestItem>().ToTable(t => t.HasCheckConstraint("CK_GuestRequestItems_Values", "\"Quantity\" > 0 AND \"QuotedUnitPrice\" >= 0"));
         b.Entity<Payment>().HasIndex(x => x.OrderId).IsUnique();
         b.Entity<Payment>().Property(x => x.Amount).HasPrecision(14, 2);
         b.Entity<Payment>().Property(x => x.Method).HasMaxLength(20);

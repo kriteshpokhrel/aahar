@@ -301,6 +301,8 @@ public sealed class TestFactory : WebApplicationFactory<Program>
             services.AddTransient<IStartupFilter, LoopbackFilter>();
             services.RemoveAll<IRestaurantService>();
             services.AddScoped<IRestaurantService, FakeService>();
+            services.RemoveAll<IGuestRequestService>();
+            services.AddScoped<IGuestRequestService, FakeGuestService>();
         });
     }
 }
