@@ -32,6 +32,8 @@ public sealed class Ingredient
     public string Name { get; set; } = "";
     public string Unit { get; set; } = "";
     public decimal Stock { get; set; }
+    public decimal LowStockThreshold { get; set; }
+    public bool IsLowStock => Stock <= LowStockThreshold;
 }
 
 public sealed class StockMovement
@@ -45,6 +47,9 @@ public sealed class StockMovement
     public decimal QuantityChange { get; set; }
     public decimal BalanceAfter { get; set; }
     public string Actor { get; set; } = "";
+    public string? Reason { get; set; }
+    public int? PurchaseReceiptLineId { get; set; }
+    public PurchaseReceiptLine? PurchaseReceiptLine { get; set; }
     public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -191,7 +196,7 @@ public static class OrderRules
         {
             row.Ingredient.Stock -= row.Amount;
             movements.Add(new StockMovement { Ingredient = row.Ingredient, IngredientId = row.Ingredient.Id,
-                OrderId = order.Id, Kind = "Consumption", QuantityChange = -row.Amount, BalanceAfter = row.Ingredient.Stock, Actor = actor });
+                OrderId = order.Id, Kind = "Consumption", QuantityChange = -row.Amount, BalanceAfter = row.Ingredient.Stock, Actor = actor, Reason = "Order sent to kitchen" });
         }
         order.ConsumptionMovementCount = movements.Count;
         return movements;
@@ -230,7 +235,7 @@ public static class OrderRules
             var ingredient = movement.Ingredient;
             ingredient.Stock -= movement.QuantityChange;
             reversals.Add(new StockMovement { Ingredient = ingredient, IngredientId = ingredient.Id, OrderId = order.Id,
-                Kind = "Cancellation", QuantityChange = -movement.QuantityChange, BalanceAfter = ingredient.Stock, Actor = actor });
+                Kind = "Cancellation", QuantityChange = -movement.QuantityChange, BalanceAfter = ingredient.Stock, Actor = actor, Reason = reason.Trim() });
         }
         order.Status = "Cancelled";
         if (order.Ticket is not null) order.Ticket.Status = "Cancelled";

@@ -7,10 +7,10 @@ public record MenuRequest(string Name, string? Description, string Category, dec
 public record MenuDto(int Id, string Name, string? Description, string Category, decimal Price, bool IsAvailable);
 public record TableRequest(int Number, int Capacity);
 public record TableDto(int Id, int Number, int Capacity, bool IsOccupied);
-public record IngredientRequest(string Name, string Unit, decimal Stock);
-public record IngredientDto(int Id, string Name, string Unit, decimal Stock);
-public record StockRequest(decimal Quantity);
-public record StockMovementDto(long Id, int IngredientId, int? OrderId, string Kind, decimal QuantityChange, decimal BalanceAfter, string Actor, DateTime OccurredAt);
+public record IngredientRequest(string Name, string Unit, decimal Stock, decimal LowStockThreshold = 0);
+public record IngredientDto(int Id, string Name, string Unit, decimal Stock, decimal LowStockThreshold, bool IsLowStock);
+public record StockRequest(decimal Quantity, string? Unit = null, string? Reason = null);
+public record StockMovementDto(long Id, int IngredientId, int? OrderId, string Kind, decimal QuantityChange, decimal BalanceAfter, string Actor, DateTime OccurredAt, string? Reason, int? PurchaseReceiptLineId);
 public record RecipeLine(int IngredientId, decimal Quantity);
 public record RecipeRequest(List<RecipeLine> Ingredients);
 public record OrderLineRequest(int MenuItemId, int Quantity, string? Notes = null);

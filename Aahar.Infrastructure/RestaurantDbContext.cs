@@ -15,6 +15,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<KitchenTicket> KitchenTickets => Set<KitchenTicket>();
     public DbSet<GuestRequest> GuestRequests => Set<GuestRequest>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<SupplierChange> SupplierChanges => Set<SupplierChange>();
+    public DbSet<IngredientThresholdChange> IngredientThresholdChanges => Set<IngredientThresholdChange>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -31,20 +35,63 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         b.Entity<Ingredient>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<Ingredient>().Property(x => x.Unit).HasMaxLength(30);
         b.Entity<Ingredient>().Property(x => x.Stock).HasPrecision(14, 3);
-        b.Entity<Ingredient>().ToTable(t => t.HasCheckConstraint("CK_Ingredients_Stock", "\"Stock\" >= 0"));
+        b.Entity<Ingredient>().Property(x => x.LowStockThreshold).HasPrecision(14, 3);
+        b.Entity<Ingredient>().Ignore(x => x.IsLowStock);
+        b.Entity<Ingredient>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Ingredients_Stock", "\"Stock\" >= 0");
+            t.HasCheckConstraint("CK_Ingredients_Threshold", "\"LowStockThreshold\" >= 0");
+        });
         b.Entity<StockMovement>().Property(x => x.Kind).HasMaxLength(20);
         b.Entity<StockMovement>().Property(x => x.Actor).HasMaxLength(100);
+        b.Entity<StockMovement>().Property(x => x.Reason).HasMaxLength(300);
         b.Entity<StockMovement>().Property(x => x.QuantityChange).HasPrecision(14, 3);
         b.Entity<StockMovement>().Property(x => x.BalanceAfter).HasPrecision(14, 3);
         b.Entity<StockMovement>().HasOne(x => x.Ingredient).WithMany().HasForeignKey(x => x.IngredientId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<StockMovement>().HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<StockMovement>().HasOne(x => x.PurchaseReceiptLine).WithOne().HasForeignKey<StockMovement>(x => x.PurchaseReceiptLineId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<StockMovement>().HasIndex(x => new { x.OrderId, x.IngredientId, x.Kind }).IsUnique().HasFilter("\"OrderId\" IS NOT NULL");
         b.Entity<StockMovement>().HasIndex(x => new { x.IngredientId, x.Id });
         b.Entity<StockMovement>().ToTable(t =>
         {
             t.HasCheckConstraint("CK_StockMovements_Balance", "\"BalanceAfter\" >= 0");
-            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL)");
+            t.HasCheckConstraint("CK_StockMovements_Kind", "((\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Waste' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NULL)) AND \"PurchaseReceiptLineId\" IS NULL OR (\"Kind\" = 'Purchase' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL AND \"PurchaseReceiptLineId\" IS NOT NULL)");
+            t.HasCheckConstraint("CK_StockMovements_Reason", "\"Kind\" NOT IN ('Purchase', 'Waste') OR (\"Reason\" IS NOT NULL AND length(btrim(\"Reason\")) > 0)");
         });
+        b.Entity<Supplier>().Property(x => x.Name).HasMaxLength(100);
+        b.Entity<Supplier>().Property(x => x.Contact).HasMaxLength(200);
+        b.Entity<Supplier>().Property(x => x.Revision).IsConcurrencyToken();
+        b.Entity<Supplier>().HasIndex(x => x.Name).IsUnique();
+        b.Entity<SupplierChange>().Property(x => x.Name).HasMaxLength(100);
+        b.Entity<SupplierChange>().Property(x => x.Contact).HasMaxLength(200);
+        b.Entity<SupplierChange>().Property(x => x.Actor).HasMaxLength(100);
+        b.Entity<SupplierChange>().Property(x => x.Reason).HasMaxLength(300);
+        b.Entity<SupplierChange>().HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<SupplierChange>().HasIndex(x => new { x.SupplierId, x.Id });
+        b.Entity<IngredientThresholdChange>().Property(x => x.PreviousThreshold).HasPrecision(14, 3);
+        b.Entity<IngredientThresholdChange>().Property(x => x.NewThreshold).HasPrecision(14, 3);
+        b.Entity<IngredientThresholdChange>().Property(x => x.Actor).HasMaxLength(100);
+        b.Entity<IngredientThresholdChange>().Property(x => x.Reason).HasMaxLength(300);
+        b.Entity<IngredientThresholdChange>().HasOne(x => x.Ingredient).WithMany().HasForeignKey(x => x.IngredientId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<IngredientThresholdChange>().HasIndex(x => new { x.IngredientId, x.Id });
+        b.Entity<IngredientThresholdChange>().ToTable(t => t.HasCheckConstraint("CK_ThresholdChanges_Values", "\"NewThreshold\" >= 0 AND (\"PreviousThreshold\" IS NULL OR \"PreviousThreshold\" >= 0)"));
+        b.Entity<PurchaseReceipt>().Property(x => x.SupplierName).HasMaxLength(100);
+        b.Entity<PurchaseReceipt>().Property(x => x.Reference).HasMaxLength(100);
+        b.Entity<PurchaseReceipt>().Property(x => x.Reason).HasMaxLength(300);
+        b.Entity<PurchaseReceipt>().Property(x => x.Actor).HasMaxLength(100);
+        b.Entity<PurchaseReceipt>().Property(x => x.Total).HasPrecision(14, 2);
+        b.Entity<PurchaseReceipt>().HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PurchaseReceipt>().HasIndex(x => new { x.SupplierId, x.Reference }).IsUnique();
+        b.Entity<PurchaseReceipt>().ToTable(t => t.HasCheckConstraint("CK_PurchaseReceipts_Total", "\"Total\" >= 0"));
+        b.Entity<PurchaseReceiptLine>().Property(x => x.IngredientName).HasMaxLength(100);
+        b.Entity<PurchaseReceiptLine>().Property(x => x.Unit).HasMaxLength(30);
+        b.Entity<PurchaseReceiptLine>().Property(x => x.Quantity).HasPrecision(14, 3);
+        b.Entity<PurchaseReceiptLine>().Property(x => x.UnitCost).HasPrecision(12, 2);
+        b.Entity<PurchaseReceiptLine>().Property(x => x.LineTotal).HasPrecision(14, 2);
+        b.Entity<PurchaseReceiptLine>().HasOne(x => x.PurchaseReceipt).WithMany(x => x.Lines).HasForeignKey(x => x.PurchaseReceiptId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PurchaseReceiptLine>().HasOne(x => x.Ingredient).WithMany().HasForeignKey(x => x.IngredientId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PurchaseReceiptLine>().HasIndex(x => new { x.PurchaseReceiptId, x.IngredientId }).IsUnique();
+        b.Entity<PurchaseReceiptLine>().ToTable(t => t.HasCheckConstraint("CK_PurchaseReceiptLines_Values", "\"Quantity\" > 0 AND \"UnitCost\" >= 0 AND \"LineTotal\" >= 0"));
         b.Entity<RecipeIngredient>().HasKey(x => new { x.MenuItemId, x.IngredientId });
         b.Entity<RecipeIngredient>().Property(x => x.Quantity).HasPrecision(14, 3);
         b.Entity<RecipeIngredient>().ToTable(t => t.HasCheckConstraint("CK_Recipes_Quantity", "\"Quantity\" > 0"));

@@ -10,6 +10,8 @@ When upgrading an already-provisioned dedicated Aahar database, stop all old app
 
 The kitchen migration reconstructs a queued ticket from the stored item snapshots for each existing Sent order, without deducting stock again. These tickets have `isReconstructed:true`, no historical notes, and use the order creation time rather than its unknown send time. An operator must check their actual kitchen status before proceeding; treating them as newly queued could cause food to be prepared twice. Migration stops if a Sent order has no items. Existing Completed and Paid orders do not get reconstructed tickets.
 
+The inventory migration sets existing ingredients' low-stock thresholds to zero and records a system-authored initial threshold history entry. Existing stock movements retain a null reason. Its rollback is refused because it would destroy purchase and inventory history.
+
 With .NET 10 installed and a dedicated database already created by its owner, configure a connection string privately (do not enter passwords in chat or commit them). For example, in a local bash terminal, prompt without echo and avoid putting the value in shell history:
 
 ```bash
@@ -60,10 +62,19 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 | `POST /api/menu`, `PUT /api/menu/{id}` | `{name,description,category,price,isAvailable}`; returns item | Admin, Manager |
 | `GET /api/tables` | `{id,number,capacity,isOccupied}[]` | Authenticated |
 | `POST /api/tables` | `{number,capacity}`; returns table | Admin, Manager |
-| `GET /api/ingredients` | `{id,name,unit,stock}[]` | Admin, Manager |
-| `POST /api/ingredients` | `{name,unit,stock}`; returns ingredient | Admin, Manager |
-| `POST /api/ingredients/{id}/stock` | `{quantity}` positive receipt; returns ingredient | Admin, Manager |
+| `GET /api/ingredients` | `{id,name,unit,stock,lowStockThreshold,isLowStock}[]` | Admin, Manager |
+| `POST /api/ingredients` | `{name,unit,stock,lowStockThreshold}`; threshold defaults to zero; returns ingredient | Admin, Manager |
+| `GET /api/ingredients/low-stock` | Ingredients whose stock is at or below threshold | Admin, Manager |
+| `PUT /api/ingredients/{id}/threshold` | `{threshold,reason}`; returns ingredient | Admin, Manager |
+| `GET /api/ingredients/{id}/threshold-history?beforeId=&limit=` | Newest-first `{id,ingredientId,previousThreshold,newThreshold,actor,reason,occurredAt}[]` | Admin, Manager |
+| `POST /api/ingredients/{id}/stock` | `{quantity,unit,reason}` positive manual receipt; unit and reason optional for compatibility; returns ingredient | Admin, Manager |
+| `POST /api/ingredients/{id}/waste` | `{quantity,unit,reason}`; returns ingredient | Admin, Manager |
 | `GET /api/ingredients/{id}/movements?beforeId=&limit=` | Newest-first stock movements; limit 1–100, default 50; use the last ID as `beforeId` for the next page | Admin, Manager |
+| `GET /api/suppliers` | `{id,name,contact}[]` | Admin, Manager |
+| `POST /api/suppliers`, `PUT /api/suppliers/{id}` | `{name,contact,reason}`; returns supplier | Admin, Manager |
+| `GET /api/suppliers/{id}/history?beforeId=&limit=` | Newest-first `{id,supplierId,name,contact,actor,reason,occurredAt}[]` | Admin, Manager |
+| `POST /api/purchase-receipts` | `{supplierId,reference,reason,lines:[{ingredientId,quantity,unit,unitCost}]}`; returns receipt | Admin, Manager |
+| `GET /api/purchase-receipts?beforeId=&limit=`, `GET /api/purchase-receipts/{id}` | Receipt list or single receipt | Admin, Manager |
 | `GET /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` | Admin, Manager |
 | `PUT /api/menu/{id}/recipe` | `{ingredients:[{ingredientId,quantity}]}` replaces recipe; 204 | Admin, Manager |
 | `GET /api/orders` | Orders, newest first | Authenticated |
@@ -92,7 +103,9 @@ Guest submissions are limited globally per server process to five attempts per m
 
 Sending uses the recipe configured at **send time**. No recipe means no stock deduction for that item. Configured ingredients are aggregated and checked before any deduction. Stock, send, cancellation, completion, recipe changes, and payment use serializable transactions; concurrent conflicts must be retried after refreshing. A unique payment per order, unique active order per table, state transitions, movement uniqueness, and nonnegative stock constraints provide additional safeguards.
 
-Cancellation requires a nonblank reason (at most 300 characters). Draft uses `stockDisposition:"None"`; submitted orders require `stockDisposition:"Return"` or `"Waste"`. Return restores the exact recorded deductions, even if recipes have changed, and must only be selected when the ingredients are physically reusable. Waste leaves the deduction in place. A cancelled order cannot be cancelled again, and a paid order cannot be cancelled. Reason, actor, time, and disposition remain on the order. The stock ledger records opening balances, receipts, consumption, and returns as `{id,ingredientId,orderId,kind,quantityChange,balanceAfter,actor,occurredAt}`; orderId is null for opening and receipt. Waste is recorded on the cancelled order, not as a stock change.
+Cancellation requires a nonblank reason (at most 300 characters). Draft uses `stockDisposition:"None"`; submitted orders require `stockDisposition:"Return"` or `"Waste"`. Return restores the exact recorded deductions, even if recipes have changed, and must only be selected when the ingredients are physically reusable. Waste leaves the deduction in place. A cancelled order cannot be cancelled again, and a paid order cannot be cancelled. Reason, actor, time, and disposition remain on the order. The stock ledger records movements as `{id,ingredientId,orderId,kind,quantityChange,balanceAfter,actor,occurredAt,reason,purchaseReceiptLineId}`. Cancellation waste is recorded on the cancelled order, not as a further stock change; separately recorded inventory waste creates a negative `Waste` movement.
+
+Supplier names are unique and updates retain actor, reason and the new values in history. Receipt shape is `{id,supplierId,supplierName,reference,reason,actor,receivedAt,total,lines:[{id,ingredientId,ingredientName,unit,quantity,unitCost,lineTotal}]}`. Supplier and ingredient names, units and costs are snapshots. A supplier/reference pair is unique (case-sensitive); duplicate submissions return 409, not an idempotent success. A receipt contains 1–100 distinct ingredients. Quantities are positive with at most three decimal places; unit must exactly match the ingredient's unit, and unit costs are nonnegative with at most two decimals. Each line total is rounded to two decimals away from zero, and the receipt total is the sum of those rounded lines. Stock, receipt, lines and linked `Purchase` ledger movements are saved atomically. Waste requires the same exact unit and positive quantity, a nonblank reason, and sufficient stock. Reasons are at most 300 characters. Manual receipts without a reason record `Manual stock receipt`; without a unit they use the ingredient's existing unit. Thresholds are nonnegative with at most three decimals, and an unchanged threshold is rejected. History and receipt list pagination uses `limit` 1–100 (default 50) and the last returned ID as `beforeId`.
 
 Reports require both inclusive ISO dates, ordered, within 1900-01-01 through 9998-12-30, and spanning at most 366 calendar days. They convert the local start midnight and midnight after the end date to the UTC half-open interval `[fromUtc,toUtcExclusive)` and filter on payment time and Paid status. An invalid or ambiguous local midnight is rejected with 400 rather than guessed. Empty sales return zero count and total; empty best-sellers return an empty array. Best-selling `limit` is 1–100, default 20. Rows group by the stored menu item ID, name, and unit price snapshots, so renamed/repriced items appear as separate rows; revenue is the sum of snapshot price times quantity. Results sort by quantity descending, revenue descending, then ID, name, and price. `total` is the sum of simulated payment amounts, with no tax, refund, or IRD accounting.
 
@@ -102,4 +115,4 @@ Payments are **simulated only**; this is **not IRD certified** and is not suitab
 
 `dotnet test Aahar.Tests/Aahar.Tests.csproj` runs isolated domain/mapping and HTTP cookie, CSRF, and role tests without a PostgreSQL connection. Before operational use, run end-to-end migration, transaction/concurrency, and recovery tests against a separately provisioned disposable database with explicit approval. The included tests do not verify PostgreSQL concurrency or migrations against a live server.
 
-This is an intentionally incomplete portfolio foundation: no guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.
+This is an intentionally incomplete portfolio foundation: no supplier deletion, purchase receipt correction/returns or cost-based valuation, guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.

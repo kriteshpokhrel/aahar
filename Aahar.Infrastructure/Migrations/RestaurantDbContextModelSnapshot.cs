@@ -152,6 +152,10 @@ namespace Aahar.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<decimal>("LowStockThreshold")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -174,6 +178,50 @@ namespace Aahar.Infrastructure.Migrations
                     b.ToTable("Ingredients", t =>
                         {
                             t.HasCheckConstraint("CK_Ingredients_Stock", "\"Stock\" >= 0");
+
+                            t.HasCheckConstraint("CK_Ingredients_Threshold", "\"LowStockThreshold\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Aahar.Domain.IngredientThresholdChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("IngredientId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("NewThreshold")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("PreviousThreshold")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IngredientId", "Id");
+
+                    b.ToTable("IngredientThresholdChanges", t =>
+                        {
+                            t.HasCheckConstraint("CK_ThresholdChanges_Values", "\"NewThreshold\" >= 0 AND (\"PreviousThreshold\" IS NULL OR \"PreviousThreshold\" >= 0)");
                         });
                 });
 
@@ -413,6 +461,104 @@ namespace Aahar.Infrastructure.Migrations
                     b.ToTable("Payments");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.PurchaseReceipt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SupplierName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId", "Reference")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseReceipts", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseReceipts_Total", "\"Total\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Aahar.Domain.PurchaseReceiptLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("IngredientId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IngredientName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
+                    b.Property<int>("PurchaseReceiptId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("numeric(14,3)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IngredientId");
+
+                    b.HasIndex("PurchaseReceiptId", "IngredientId")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseReceiptLine", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseReceiptLines_Values", "\"Quantity\" > 0 AND \"UnitCost\" >= 0 AND \"LineTotal\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Aahar.Domain.RecipeIngredient", b =>
                 {
                     b.Property<int>("MenuItemId")
@@ -466,11 +612,21 @@ namespace Aahar.Infrastructure.Migrations
                     b.Property<int?>("OrderId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("PurchaseReceiptLineId")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("QuantityChange")
                         .HasPrecision(14, 3)
                         .HasColumnType("numeric(14,3)");
 
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("PurchaseReceiptLineId")
+                        .IsUnique();
 
                     b.HasIndex("IngredientId", "Id");
 
@@ -482,8 +638,79 @@ namespace Aahar.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_StockMovements_Balance", "\"BalanceAfter\" >= 0");
 
-                            t.HasCheckConstraint("CK_StockMovements_Kind", "(\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_StockMovements_Kind", "((\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Waste' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NULL)) AND \"PurchaseReceiptLineId\" IS NULL OR (\"Kind\" = 'Purchase' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL AND \"PurchaseReceiptLineId\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_StockMovements_Reason", "\"Kind\" NOT IN ('Purchase', 'Waste') OR (\"Reason\" IS NOT NULL AND length(btrim(\"Reason\")) > 0)");
                         });
+                });
+
+            modelBuilder.Entity("Aahar.Domain.Supplier", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Contact")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Suppliers");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.SupplierChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Contact")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId", "Id");
+
+                    b.ToTable("SupplierChanges");
                 });
 
             modelBuilder.Entity("Aahar.Domain.User", b =>
@@ -552,6 +779,17 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Request");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.IngredientThresholdChange", b =>
+                {
+                    b.HasOne("Aahar.Domain.Ingredient", "Ingredient")
+                        .WithMany()
+                        .HasForeignKey("IngredientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Ingredient");
+                });
+
             modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
                 {
                     b.HasOne("Aahar.Domain.Order", "Order")
@@ -614,6 +852,36 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("Aahar.Domain.PurchaseReceipt", b =>
+                {
+                    b.HasOne("Aahar.Domain.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.PurchaseReceiptLine", b =>
+                {
+                    b.HasOne("Aahar.Domain.Ingredient", "Ingredient")
+                        .WithMany()
+                        .HasForeignKey("IngredientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Aahar.Domain.PurchaseReceipt", "PurchaseReceipt")
+                        .WithMany("Lines")
+                        .HasForeignKey("PurchaseReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Ingredient");
+
+                    b.Navigation("PurchaseReceipt");
+                });
+
             modelBuilder.Entity("Aahar.Domain.RecipeIngredient", b =>
                 {
                     b.HasOne("Aahar.Domain.Ingredient", "Ingredient")
@@ -646,9 +914,27 @@ namespace Aahar.Infrastructure.Migrations
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Aahar.Domain.PurchaseReceiptLine", "PurchaseReceiptLine")
+                        .WithOne()
+                        .HasForeignKey("Aahar.Domain.StockMovement", "PurchaseReceiptLineId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Ingredient");
 
                     b.Navigation("Order");
+
+                    b.Navigation("PurchaseReceiptLine");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.SupplierChange", b =>
+                {
+                    b.HasOne("Aahar.Domain.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("Aahar.Domain.GuestRequest", b =>
@@ -673,6 +959,11 @@ namespace Aahar.Infrastructure.Migrations
                     b.Navigation("Payment");
 
                     b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("Aahar.Domain.PurchaseReceipt", b =>
+                {
+                    b.Navigation("Lines");
                 });
 #pragma warning restore 612, 618
         }

@@ -19,6 +19,7 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
 var businessZoneId = builder.Configuration["Business:TimeZone"];
 if (string.IsNullOrWhiteSpace(businessZoneId)) throw new InvalidOperationException("Set Business:TimeZone to the restaurant's time zone.");
 try
@@ -170,9 +171,20 @@ api.MapPut("/menu/{id:int}", (int id, MenuRequest r, IRestaurantService s, Cance
 api.MapGet("/tables", (IRestaurantService s, CancellationToken ct) => s.TablesAsync(ct));
 api.MapPost("/tables", (TableRequest r, IRestaurantService s, CancellationToken ct) => s.CreateTableAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/ingredients", (IRestaurantService s, CancellationToken ct) => s.IngredientsAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/ingredients/low-stock", (IInventoryService s, CancellationToken ct) => s.LowStockAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapPost("/ingredients", (IngredientRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.CreateIngredientAsync(r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapPost("/ingredients/{id:int}/stock", (int id, StockRequest r, ClaimsPrincipal user, IRestaurantService s, CancellationToken ct) => s.AddStockAsync(id, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPut("/ingredients/{id:int}/threshold", (int id, ThresholdRequest r, ClaimsPrincipal user, IInventoryService s, CancellationToken ct) => s.ChangeThresholdAsync(id, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/ingredients/{id:int}/threshold-history", (int id, long? beforeId, int? limit, IInventoryService s, CancellationToken ct) => s.ThresholdHistoryAsync(id, beforeId, limit ?? 50, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPost("/ingredients/{id:int}/waste", (int id, WasteRequest r, ClaimsPrincipal user, IInventoryService s, CancellationToken ct) => s.WasteAsync(id, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/ingredients/{id:int}/movements", (int id, long? beforeId, int? limit, IRestaurantService s, CancellationToken ct) => s.StockMovementsAsync(id, beforeId, limit ?? 50, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/suppliers", (IInventoryService s, CancellationToken ct) => s.SuppliersAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPost("/suppliers", (SupplierRequest r, ClaimsPrincipal user, IInventoryService s, CancellationToken ct) => s.SaveSupplierAsync(null, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPut("/suppliers/{id:int}", (int id, SupplierRequest r, ClaimsPrincipal user, IInventoryService s, CancellationToken ct) => s.SaveSupplierAsync(id, r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/suppliers/{id:int}/history", (int id, long? beforeId, int? limit, IInventoryService s, CancellationToken ct) => s.SupplierHistoryAsync(id, beforeId, limit ?? 50, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPost("/purchase-receipts", (PurchaseReceiptRequest r, ClaimsPrincipal user, IInventoryService s, CancellationToken ct) => s.ReceiveAsync(r, user.Identity!.Name!, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/purchase-receipts", (int? beforeId, int? limit, IInventoryService s, CancellationToken ct) => s.ReceiptsAsync(beforeId, limit ?? 50, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapGet("/purchase-receipts/{id:int}", (int id, IInventoryService s, CancellationToken ct) => s.ReceiptAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/menu/{id:int}/recipe", (int id, IRestaurantService s, CancellationToken ct) => s.RecipeAsync(id, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapPut("/menu/{id:int}/recipe", async (int id, RecipeRequest r, IRestaurantService s, CancellationToken ct) => { await s.SetRecipeAsync(id, r, ct); return Results.NoContent(); }).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/orders", (IRestaurantService s, CancellationToken ct) => s.OrdersAsync(ct));

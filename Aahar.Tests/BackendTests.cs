@@ -205,7 +205,7 @@ public class BackendTests
         Assert.Equal(new OrderItemDto(4, "Momo", 2, 120.5m, null), dto);
         Assert.Equal(new UserDto("admin", "Admin"), new User { Username = "admin", Role = "Admin" }.Adapt<UserDto>());
         var movement = new StockMovement { Id = 7, IngredientId = 4, OrderId = 3, Kind = "Consumption", QuantityChange = -2m, BalanceAfter = 8m, Actor = "staff" };
-        Assert.Equal(new StockMovementDto(7, 4, 3, "Consumption", -2m, 8m, "staff", movement.OccurredAt), movement.Adapt<StockMovementDto>());
+        Assert.Equal(new StockMovementDto(7, 4, 3, "Consumption", -2m, 8m, "staff", movement.OccurredAt, null, null), movement.Adapt<StockMovementDto>());
     }
 
     [Fact]
@@ -305,6 +305,8 @@ public sealed class TestFactory : WebApplicationFactory<Program>
             services.AddScoped<IGuestRequestService, FakeGuestService>();
             services.RemoveAll<IReportService>();
             services.AddScoped<IReportService, FakeReportService>();
+            services.RemoveAll<IInventoryService>();
+            services.AddScoped<IInventoryService, FakeInventoryService>();
         });
     }
 }

@@ -15,7 +15,9 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
     }
     private static bool ValidText(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
     private static bool Money(decimal n) => n >= 0 && n <= 9999999999.99m && decimal.Round(n, 2) == n;
-    private static bool Quantity(decimal n) => n >= 0 && n <= 99999999999.999m && decimal.Round(n, 3) == n;
+    private static bool Quantity(decimal n) => InventoryRules.ValidQuantity(n);
+    internal static IngredientDto ToDto(Ingredient ingredient) =>
+        new(ingredient.Id, ingredient.Name, ingredient.Unit, ingredient.Stock, ingredient.LowStockThreshold, ingredient.IsLowStock);
     internal static OrderDto ToDto(Order order) => new(order.Id, order.TableId, order.Status, order.CreatedAt,
         order.Items.Adapt<List<OrderItemDto>>(), order.Items.Sum(x => x.UnitPrice * x.Quantity), order.Payment?.Adapt<PaymentDto>(),
         order.CancelledAt, order.CancelledBy, order.CancellationReason, order.CancellationStockDisposition);
@@ -68,24 +70,27 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
         db.Tables.Add(table); await db.SaveChangesAsync(ct); return new TableDto(table.Id, table.Number, table.Capacity, false);
     }
     public async Task<IReadOnlyList<IngredientDto>> IngredientsAsync(CancellationToken ct) =>
-        (await db.Ingredients.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct)).Adapt<List<IngredientDto>>();
+        (await db.Ingredients.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct)).Select(ToDto).ToList();
     public async Task<IngredientDto> CreateIngredientAsync(IngredientRequest r, string actor, CancellationToken ct)
     {
-        Check(ValidText(r.Name, 100) && ValidText(r.Unit, 30) && Quantity(r.Stock), "Invalid ingredient.");
+        Check(ValidText(r.Name, 100) && ValidText(r.Unit, 30) && Quantity(r.Stock) && Quantity(r.LowStockThreshold), "Invalid ingredient.");
         var ingredient = new Ingredient { Name = r.Name.Trim(), Unit = r.Unit.Trim(), Stock = r.Stock };
         db.Ingredients.Add(ingredient);
-        db.StockMovements.Add(new StockMovement { Ingredient = ingredient, Kind = "Opening", QuantityChange = r.Stock, BalanceAfter = r.Stock, Actor = actor });
-        await db.SaveChangesAsync(ct); return ingredient.Adapt<IngredientDto>();
+        db.IngredientThresholdChanges.Add(InventoryRules.ChangeThreshold(ingredient, r.LowStockThreshold, "Initial threshold", actor, initial: true));
+        db.StockMovements.Add(new StockMovement { Ingredient = ingredient, Kind = "Opening", QuantityChange = r.Stock, BalanceAfter = r.Stock, Actor = actor, Reason = "Opening balance" });
+        await db.SaveChangesAsync(ct); return ToDto(ingredient);
     }
     public async Task<IngredientDto> AddStockAsync(int id, StockRequest r, string actor, CancellationToken ct)
     {
         Check(Quantity(r.Quantity) && r.Quantity > 0, "Stock quantity must be positive with at most three decimal places.");
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var ingredient = await db.Ingredients.FindAsync([id], ct) ?? throw new DomainException("Ingredient not found.");
+        Check(r.Unit is null || r.Unit == ingredient.Unit, "Unit does not match the ingredient.");
+        var reason = r.Reason is null ? "Manual stock receipt" : InventoryRules.RequiredText(r.Reason, 300, "Reason");
         Check(Quantity(ingredient.Stock + r.Quantity), "Stock exceeds the maximum.");
         ingredient.Stock += r.Quantity;
-        db.StockMovements.Add(new StockMovement { IngredientId = id, Kind = "Receipt", QuantityChange = r.Quantity, BalanceAfter = ingredient.Stock, Actor = actor });
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ingredient.Adapt<IngredientDto>();
+        db.StockMovements.Add(new StockMovement { IngredientId = id, Kind = "Receipt", QuantityChange = r.Quantity, BalanceAfter = ingredient.Stock, Actor = actor, Reason = reason });
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ToDto(ingredient);
     }
     public async Task<IReadOnlyList<StockMovementDto>> StockMovementsAsync(int id, long? beforeId, int limit, CancellationToken ct)
     {
