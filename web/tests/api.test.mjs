@@ -88,3 +88,32 @@ test('takeaway, draft editing and kitchen ticket transitions use the confirmed c
     globalThis.fetch = originalFetch
   }
 })
+
+test('guest token stays in request header and staff review uses the correct endpoints', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/guest/requests') return Response.json({ id: 5, status: 'Pending', accessToken: 'guest-secret' })
+    if (url === '/api/guest/requests/5') return Response.json({ id: 5, status: 'Pending', orderId: null })
+    if (url.startsWith('/api/guest-requests?')) return Response.json([])
+    return Response.json({ id: 5, status: 'Rejected' })
+  }
+  try {
+    const items = [{ menuItemId: 2, quantity: 1, notes: 'No onion', quotedUnitPrice: 300 }]
+    const receipt = await api.submitGuestRequest(4, items)
+    await api.guestRequestStatus(receipt.id, receipt.accessToken)
+    await api.guestRequests('Pending', 10)
+    await api.acceptGuestRequest(5)
+    await api.rejectGuestRequest(5, 'Unavailable')
+    assert.deepEqual(JSON.parse(calls[0].options.body), { tableId: 4, items })
+    assert.equal(calls[0].options.headers.get('X-CSRF-TOKEN'), 'token')
+    assert.equal(calls[1].options.headers.get('X-Guest-Request-Token'), 'guest-secret')
+    assert.ok(calls.every(call => !call.url.includes('guest-secret')))
+    assert.equal(calls[2].url, '/api/guest-requests?status=Pending&limit=20&beforeId=10')
+    assert.equal(calls[3].url, '/api/guest-requests/5/accept')
+    assert.deepEqual(JSON.parse(calls[4].options.body), { reason: 'Unavailable' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

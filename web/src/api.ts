@@ -37,6 +37,15 @@ export type StockDisposition = 'None' | 'Return' | 'Waste'
 export type Ingredient = { id: number; name: string; unit: string; stock: number }
 export type Sales = { ordersPaid: number; total: number }
 export type MenuInput = { name: string; description: string | null; category: string; price: number; isAvailable: boolean }
+export type GuestStatus = 'Pending' | 'Accepted' | 'Rejected'
+export type GuestQuoteLine = OrderLine & { quotedUnitPrice: number }
+export type GuestRequest = {
+  id: number; tableId: number | null; status: GuestStatus; createdAt: string
+  decidedAt: string | null; decidedBy: string | null; rejectionReason: string | null; orderId: number | null
+  items: { menuItemId: number; name: string; quantity: number; quotedUnitPrice: number; notes: string | null }[]
+}
+export type GuestSubmission = { id: number; status: GuestStatus; accessToken: string }
+export type GuestRequestStatus = { id: number; status: GuestStatus; orderId: number | null }
 
 export class ApiError extends Error {
   status: number
@@ -83,6 +92,17 @@ export const api = {
   },
   menu: () => request<MenuItem[]>('/menu'),
   guestMenu: () => request<MenuItem[]>('/guest/menu'),
+  submitGuestRequest: (tableId: number | null, items: GuestQuoteLine[]) =>
+    post<GuestSubmission>('/guest/requests', { tableId, items }),
+  guestRequestStatus: (id: number, token: string) =>
+    request<GuestRequestStatus>(`/guest/requests/${id}`, { headers: { 'X-Guest-Request-Token': token } }),
+  guestRequests: (status: GuestStatus, beforeId?: number) => {
+    const params = new URLSearchParams({ status, limit: '20' })
+    if (beforeId !== undefined) params.set('beforeId', String(beforeId))
+    return request<GuestRequest[]>(`/guest-requests?${params}`)
+  },
+  acceptGuestRequest: (id: number) => post<{ request: GuestRequest; order: Order }>(`/guest-requests/${id}/accept`),
+  rejectGuestRequest: (id: number, reason: string) => post<GuestRequest>(`/guest-requests/${id}/reject`, { reason }),
   tables: () => request<Table[]>('/tables'),
   orders: () => request<Order[]>('/orders'),
   createOrder: (tableId: number | null, items: OrderLine[]) =>
