@@ -2,6 +2,26 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api, ApiError } from '../src/api.ts'
 
+test('menu image mutations send raw image content and CSRF protection', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'image-token' })
+    return new Response(null, { status: 204 })
+  }
+  try {
+    const image = new File(['image bytes'], 'menu.png', { type: 'image/png' })
+    await api.uploadMenuImage(7, image)
+    await api.deleteMenuImage(7)
+    const mutations = calls.filter(call => call.url === '/api/menu/7/image')
+    assert.deepEqual(mutations.map(call => call.options.method), ['PUT', 'DELETE'])
+    assert.equal(mutations[0].options.body, image)
+    assert.equal(mutations[0].options.headers.get('Content-Type'), 'image/png')
+    assert.ok(mutations.every(call => call.options.credentials === 'same-origin' && call.options.headers.get('X-CSRF-TOKEN')))
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
 test('staff account creation uses the authenticated CSRF-protected endpoint', async () => {
   const calls = []
   const originalFetch = globalThis.fetch

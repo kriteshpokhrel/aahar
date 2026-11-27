@@ -70,7 +70,7 @@ let csrfToken: string | null = null
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body) headers.set('Content-Type', 'application/json')
+  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (options.method && !['GET', 'HEAD'].includes(options.method)) {
     csrfToken ??= (await request<{ requestToken: string }>('/auth/csrf')).requestToken
     headers.set('X-CSRF-TOKEN', csrfToken)
@@ -139,6 +139,9 @@ export const api = {
     post<Order>(`/orders/${id}/cancel`, { reason, stockDisposition }),
   createMenuItem: (item: MenuInput) => post<MenuItem>('/menu', item),
   updateMenuItem: (id: number, item: MenuInput) => request<MenuItem>(`/menu/${id}`, { method: 'PUT', body: JSON.stringify(item) }),
+  uploadMenuImage: (id: number, image: File) =>
+    request<void>(`/menu/${id}/image`, { method: 'PUT', headers: { 'Content-Type': image.type }, body: image }),
+  deleteMenuImage: (id: number) => request<void>(`/menu/${id}/image`, { method: 'DELETE' }),
   recipe: (id: number) => request<{ ingredients: RecipeLine[] }>(`/menu/${id}/recipe`),
   saveRecipe: (id: number, ingredients: RecipeLine[]) => put<void>(`/menu/${id}/recipe`, { ingredients }),
   createTable: (number: number, capacity: number) => post<Table>('/tables', { number, capacity }),

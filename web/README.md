@@ -33,6 +33,8 @@ Managers can view low stock, change thresholds, record stock and waste, browse m
 
 Managers can edit the ingredient quantities used per menu item in Manage recipes. Saving replaces the whole recipe; reload before saving when other managers may be editing. Stock is deducted using the recipe at order send time; an empty recipe causes no deduction.
 
+Managers can upload or remove a menu item's PNG or JPEG image (up to 2 MiB) after creating the item. Item images appear in the POS and guest menu; a local placeholder is shown if an image cannot be loaded.
+
 The guest menu QR is generated locally and encodes the same selected takeaway or table link; it does not contact a QR service. A localhost link or QR works only on the same computer, not on another device. Do not expose the development proxy to remote devices.
 
 Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Administrators can create staff accounts with a role and an administrator-supplied password; account listing and editing are not implemented in the frontend.

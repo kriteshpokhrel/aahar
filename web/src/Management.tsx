@@ -3,17 +3,35 @@ import type { FormEvent } from 'react'
 import { api } from './api'
 import type { BestSellingReport, MenuInput, MenuItem, PaidSalesReport } from './api'
 import { reportDateError } from './reportDates'
+import { MenuImage } from './MenuImage'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.'
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
 const emptyMenu: MenuInput = { name: '', description: '', category: '', price: 0, isAvailable: true }
 
-export function MenuEditor({ items, refresh }: { items: MenuItem[]; refresh: () => Promise<void> }) {
+export function MenuEditor({ items, refresh, imageVersions, imageChanged }: { items: MenuItem[]; refresh: () => Promise<void>; imageVersions: Record<number, number>; imageChanged: (id: number) => void }) {
   const [form, setForm] = useState<MenuInput>(emptyMenu)
   const [editing, setEditing] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageInputVersion, setImageInputVersion] = useState(0)
+  const [imageNotice, setImageNotice] = useState('')
+  const selectedItem = items.find(item => item.id === editing)
+  async function changeImage(remove: boolean) {
+    if (!selectedItem || busy) return
+    if (!remove && (!imageFile || !['image/png', 'image/jpeg'].includes(imageFile.type) || imageFile.size > 2 * 1024 * 1024)) {
+      setError('Choose a PNG or JPEG image no larger than 2 MiB.'); return
+    }
+    setBusy(true); setError(''); setImageNotice('')
+    try {
+      if (remove) await api.deleteMenuImage(selectedItem.id)
+      else if (imageFile) await api.uploadMenuImage(selectedItem.id, imageFile)
+      imageChanged(selectedItem.id); setImageFile(null); setImageInputVersion(value => value + 1)
+      setImageNotice(remove ? 'Image removed.' : 'Image saved.')
+    } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
     try {
@@ -23,12 +41,13 @@ export function MenuEditor({ items, refresh }: { items: MenuItem[]; refresh: () 
       await refresh()
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
-  return <div className="management"><div className="management-heading"><h3>Manage menu</h3><button className="button small secondary" onClick={() => { setOpen(!open); setEditing(null); setForm(emptyMenu) }}>{open ? 'Close' : 'Add item'}</button></div>
-    <label className="field">Edit an existing item<select value={editing ?? ''} onChange={event => {
+  return <div className="management"><div className="management-heading"><h3>Manage menu</h3><button className="button small secondary" disabled={busy} onClick={() => { setOpen(!open); setEditing(null); setForm(emptyMenu); setImageFile(null); setImageNotice(''); setError('') }}>{open ? 'Close' : 'Add item'}</button></div>
+    <label className="field">Edit an existing item<select disabled={busy} value={editing ?? ''} onChange={event => {
       const item = items.find(value => value.id === Number(event.target.value))
-      if (item) { setEditing(item.id); setForm({ name: item.name, description: item.description ?? '', category: item.category ?? '', price: item.price, isAvailable: item.isAvailable }); setOpen(true) }
+      if (item) { setEditing(item.id); setForm({ name: item.name, description: item.description ?? '', category: item.category ?? '', price: item.price, isAvailable: item.isAvailable }); setImageFile(null); setImageInputVersion(value => value + 1); setImageNotice(''); setError(''); setOpen(true) }
     }}><option value="">Choose an item</option>{items.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
     {open && <form className="management-form" onSubmit={submit}><label className="field">Name<input required maxLength={100} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label className="field">Category<input required value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label className="field">Description<input maxLength={300} value={form.description ?? ''} onChange={e => setForm({ ...form, description: e.target.value })} /></label><label className="field">Price (Rs)<input required type="number" min="0" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: Number(e.target.value) })} /></label><label className="checkbox"><input type="checkbox" checked={form.isAvailable} onChange={e => setForm({ ...form, isAvailable: e.target.checked })} /> Available to order</label>{error && <div className="alert" role="alert">{error}</div>}<button className="button primary" disabled={busy}>{busy ? 'Saving…' : editing === null ? 'Add item' : 'Save changes'}</button></form>}
+    {selectedItem && <div className="menu-image-editor"><h4>Item image</h4><p className="muted-copy">PNG or JPEG, up to 2 MiB. Save the item before adding an image.</p><MenuImage key={`${selectedItem.id}-${imageVersions[selectedItem.id] ?? 0}`} id={selectedItem.id} name={selectedItem.name} version={imageVersions[selectedItem.id]} /><label className="field">Choose image<input key={imageInputVersion} type="file" accept="image/png,image/jpeg" disabled={busy} onChange={event => { setImageFile(event.target.files?.[0] ?? null); setImageNotice(''); setError('') }} /></label><div className="guest-actions"><button type="button" className="button small secondary" disabled={busy || !imageFile} onClick={() => void changeImage(false)}>Upload image</button><button type="button" className="button small secondary" disabled={busy} onClick={() => void changeImage(true)}>Remove image</button></div>{imageNotice && <p role="status">{imageNotice}</p>}</div>}
   </div>
 }
 
