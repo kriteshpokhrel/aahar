@@ -122,8 +122,10 @@ validated pending request; they cannot modify an existing staff order.
 ### Target core service cycle
 
 This is the intended release workflow, not a claim that every step is
-implemented. In particular, order send is currently a single transition and
-idempotency keys and post-send order editing are not implemented.
+implemented. The running-round source implementation adds an idempotent
+append-and-send operation, but requires a separately approved database upgrade.
+The pre-upgrade live API still has a single send transition. Existing sent
+items cannot be edited; additional rounds append new snapshots.
 
 1. Manager creates categories, available menu items and tables; optionally
    defines ingredients and recipe quantities.

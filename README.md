@@ -27,3 +27,14 @@ The implementation book distinguishes release targets from completed work.
 Live PostgreSQL migration and selected workflow and concurrency checks have
 been exercised on dedicated local databases; a full deployment, security and
 accessibility audit is still outstanding.
+
+## Running-bill schema upgrade
+
+The source backend now supports multiple kitchen rounds on one unpaid bill.
+It requires both `20261127174754_RunningOrderRounds` and
+`20261127174813_RoundLedgerConstraints`. Do not start this backend build
+against an older database until the upgrade is explicitly approved, backed up
+and applied following the [operations guide](Aahar-API/OPERATIONS.md).
+The frontend supports the older API, but disables additional rounds when
+`roundCount` is absent. Offline migration review and database-free tests are
+not evidence that the upgrade has been applied or live-verified.
