@@ -32,6 +32,7 @@ export type OrderItem = { menuItemId: number; name: string; quantity: number; un
 export type OrderLine = { menuItemId: number; quantity: number; notes: string | null }
 export type KitchenTicket = { id: number; orderId: number; tableId: number | null; status: string; createdAt: string; isReconstructed: boolean; items: OrderItem[] }
 export type User = { username: string; role: string }
+export type StaffRole = 'Admin' | 'Manager' | 'Staff' | 'Kitchen'
 export type PaymentMethod = 'Cash' | 'Card'
 export type StockDisposition = 'None' | 'Return' | 'Waste'
 export type Ingredient = { id: number; name: string; unit: string; stock: number; lowStockThreshold: number; isLowStock: boolean }
@@ -107,6 +108,8 @@ export const api = {
     await post('/auth/logout')
     csrfToken = null
   },
+  createUser: (username: string, password: string, role: StaffRole) =>
+    post<User>('/users', { username, password, role }),
   menu: () => request<MenuItem[]>('/menu'),
   guestMenu: () => request<MenuItem[]>('/guest/menu'),
   submitGuestRequest: (tableId: number | null, items: GuestQuoteLine[]) =>

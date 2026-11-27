@@ -2,6 +2,24 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api, ApiError } from '../src/api.ts'
 
+test('staff account creation uses the authenticated CSRF-protected endpoint', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'staff-token' })
+    return Response.json({ username: 'operator', role: 'Kitchen' })
+  }
+  try {
+    assert.deepEqual(await api.createUser('operator', 'sample-password', 'Kitchen'), { username: 'operator', role: 'Kitchen' })
+    const request = calls.find(call => call.url === '/api/users')
+    assert.equal(request.options.method, 'POST')
+    assert.equal(request.options.credentials, 'same-origin')
+    assert.ok(request.options.headers.get('X-CSRF-TOKEN'))
+    assert.deepEqual(JSON.parse(request.options.body), { username: 'operator', password: 'sample-password', role: 'Kitchen' })
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
 test('session mutations obtain CSRF tokens, use same-origin credentials, and surface API errors', async () => {
   const calls = []
   const originalFetch = globalThis.fetch

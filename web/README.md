@@ -35,4 +35,4 @@ Managers can edit the ingredient quantities used per menu item in Manage recipes
 
 The guest menu QR is generated locally and encodes the same selected takeaway or table link; it does not contact a QR service. A localhost link or QR works only on the same computer, not on another device. Do not expose the development proxy to remote devices.
 
-Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Staff administration is not implemented in the frontend.
+Cash and card payments are simulations. The paid order view provides a simulated receipt from the order and payment data, not an IRD-compliant invoice. Administrators can create staff accounts with a role and an administrator-supplied password; account listing and editing are not implemented in the frontend.

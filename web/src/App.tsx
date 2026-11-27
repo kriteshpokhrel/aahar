@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import {
   ArrowLeft, ArrowRight, BookOpen, ChefHat, ChevronDown,
   CircleHelp, ClipboardList, Clock3, Grid2X2, LayoutDashboard, LogOut,
-  Minus, Package, Plus, Search, ShoppingBag, Sparkles, Store, UtensilsCrossed, X,
+  Minus, Package, Plus, Search, ShoppingBag, Sparkles, Store, Users, UtensilsCrossed, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
 import type { KitchenTicket, MenuItem, Order, OrderLine, PaymentMethod, StockDisposition, Table, User } from './api'
@@ -20,9 +20,10 @@ import { GuestQr } from './GuestQr'
 import { guestMenuUrl } from './guestLink'
 import { canAddToCart, unavailableCartIds } from './orderSafety'
 import { ServiceOverview } from './ServiceOverview'
+import { StaffAccounts } from './StaffAccounts'
 import './App.css'
 
-type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests'
+type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests' | 'staff'
 type Cart = Record<number, number>
 
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
@@ -37,6 +38,7 @@ const navigation: { id: Page; label: string; icon: typeof Grid2X2 }[] = [
   { id: 'menu', label: 'Menu', icon: BookOpen },
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'reports', label: 'Reports', icon: ClipboardList },
+  { id: 'staff', label: 'Staff accounts', icon: Users },
 ]
 
 async function fetchWorkspace(guest: boolean) {
@@ -257,9 +259,10 @@ function App() {
 
   const title = navigation.find(item => item.id === page)?.label ?? 'Guest menu'
   const canManage = !demo && ['admin', 'manager'].includes(user?.role.toLowerCase() ?? '')
+  const canAdmin = !demo && user?.role.toLowerCase() === 'admin'
   const canServe = demo || ['admin', 'manager', 'staff'].includes(user?.role.toLowerCase() ?? '')
   const canComplete = demo || ['admin', 'manager', 'kitchen'].includes(user?.role.toLowerCase() ?? '')
-  const visibleNavigation = navigation.filter(item => item.id !== 'guest-requests' || (canServe && !demo))
+  const visibleNavigation = navigation.filter(item => (item.id !== 'guest-requests' || (canServe && !demo)) && (item.id !== 'staff' || canAdmin))
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="sidebar"><Brand /><div className="workspace-label">WORKSPACE</div><nav aria-label="Main navigation">{visibleNavigation.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => { setInventoryLowOnly(false); setPage(id); setNotice('') }} aria-current={page === id ? 'page' : undefined}><Icon size={18} strokeWidth={1.7} />{label}{page === id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><Sparkles size={16} /></span><strong>Made for service.</strong><p>A little more ease in every shift.</p></div><button className="nav-item guest-link" onClick={() => { setPage('guest'); setNotice('') }} aria-current={page === 'guest' ? 'page' : undefined}><Store size={18} /> Guest menu <ArrowRight size={15} /></button><button className="profile" aria-label={`Sign out ${user?.username ?? ''}`} onClick={signOut}><span className="avatar">{user?.username.slice(0, 1).toUpperCase()}</span><span><strong>{user?.username}</strong><small>{demo ? 'Sample workspace' : user?.role}</small></span><LogOut size={17} /></button></div></aside>
@@ -283,6 +286,7 @@ function App() {
         {(page === 'inventory' || page === 'reports') && !canManage && <><PageHeading eyebrow={page === 'inventory' ? 'STOCK & SUPPLIES' : 'THE BIG PICTURE'} title={page === 'inventory' ? 'Inventory' : 'Reports'} text={page === 'inventory' ? 'Stay on top of what your kitchen needs.' : 'Make sense of your service.'} /><div className="surface placeholder"><span className="placeholder-icon">{page === 'inventory' ? <Package size={25} /> : <ClipboardList size={25} />}</span><span className="eyebrow">ACCESS & AVAILABILITY</span><h2>{demo ? 'Not available in sample mode.' : 'Manager access required.'}</h2><p>{demo ? 'Sample mode does not connect to inventory or sales data.' : 'Inventory and sales data are available to managers and administrators.'}</p></div></>}
         {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory uncertain={uncertainPurchase} setUncertain={setUncertainPurchase} initialLowOnly={inventoryLowOnly} /></>}
         {page === 'reports' && canManage && <><PageHeading eyebrow="THE BIG PICTURE" title="Reports" text="Make sense of your service." /><SalesReport /></>}
+        {page === 'staff' && canAdmin && <><PageHeading eyebrow="YOUR TEAM" title="Staff accounts" text="Create access for your restaurant team." /><StaffAccounts /></>}
         {page === 'guest' && <><PageHeading eyebrow="SHARE WHAT’S GOOD" title="Guest menu" text={demo ? 'Preview the sample menu.' : 'Share the menu and let guests send requests for staff review.'} /><div className="surface guest-preview"><div><span className="eyebrow">GUEST EXPERIENCE</span><h2>Let the menu do the talking.</h2><p>Open the guest menu on this computer. A localhost link cannot be used by guests on other devices.</p>{!demo && <label className="field guest-table-select">Guest link destination<select value={guestTable} onChange={event => setGuestTable(event.target.value)}><option value="">Takeaway</option>{tables.map(table => <option value={table.id} key={table.id}>Table {table.number}</option>)}</select></label>}<a className="button primary" href={guestMenuUrl(window.location.href, demo, guestTable)} target="_blank" rel="noreferrer">Open guest menu <ArrowRight size={16} /></a></div><GuestQr url={guestMenuUrl(window.location.href, demo, guestTable)} /></div></>}
       </div>
     </main>
