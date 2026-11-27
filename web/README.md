@@ -49,6 +49,20 @@ Select an occupied table to open its running bill. On a server that exposes `rou
 
 Workspace settings are specific to this browser: auto-send new drafts (off by default), display density, default simulated payment method and automatic receipt preview. Auto-send does not mark food ready; if sending fails after saving, use the existing draft instead of creating another. Receipts are printable at 80 mm through the browser and are explicitly simulated, not tax invoices.
 
+Administrators have **Management → Restaurant settings** for shared business
+name, tagline, address, phone, email, website and receipt footer. These are
+public business details displayed on the guest menu, staff breadcrumb and
+receipt, not private account information or browser preferences. Guest contact
+information stays in a compact expandable section. Aahar remains the product
+brand. Save conflicts retain edits and require reloading/reapplying them; a
+failed reload retains unsaved edits. Menus and workspace load the profile when
+the page opens; receipt previews refresh it when opened. Reprints use those
+current details, not historical identity snapshots. Profile failures are shown
+explicitly, and the receipt print action stays disabled while details are unavailable. Sample
+mode uses an independent fictional profile and cannot save shared settings.
+Payment/receipt warnings are concise; the printed receipt retains one clear
+simulated/not-tax label.
+
 Service and management navigation are grouped separately; password change,
 workspace settings and sign-out are in the account area. Green/red table
 surfaces retain explicit Available/Occupied labels. The guest menu prioritizes

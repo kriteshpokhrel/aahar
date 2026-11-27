@@ -67,6 +67,26 @@ coverage, physical printer compatibility or accessibility compliance.
 Multi-round backend source and its offline-reviewed migrations are integrated,
 but the local schema upgrade and PostgreSQL round/race tests remain unexecuted.
 
+Shared restaurant settings now have an Admin-only editing screen and a public
+business profile for the guest menu, workspace and receipts. This is an
+additional capability beyond the original feature inventory. The profile is
+stored outside the application in a versioned installation JSON file, avoiding
+a database migration for this feature. It supports one API writer per file and
+is backed up separately; reprints use current business details. Private account
+information and real contact details do not belong in fixtures or source.
+Browser preferences remain separate, and payments/receipts keep concise,
+unmistakable simulated/not-tax labels.
+
+The profile-only local API rollout uses pre-rounds revision `b42d7f8` plus
+backend profile slice `78ba5b5`, retaining the original application content root.
+Its public profile endpoint and unchanged guest-menu response were verified
+through the real frontend proxy. No database migration was applied. Profile
+persistence, authorization/CSRF and conflicting edits were exercised without
+PostgreSQL; mocked browser checks covered Admin editing, failed-reload edit
+preservation, fresh identity on reprints and responsive guest/receipt layouts.
+Real staff write workflows and the full running-rounds rollout remain outside
+that verification.
+
 ## 2. Scope and measurable reference coverage
 
 The inventory below decomposes the five feature-page descriptions into 25

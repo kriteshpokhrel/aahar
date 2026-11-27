@@ -7,6 +7,11 @@ export type MenuItem = {
   category?: string | null
 }
 
+export type RestaurantProfile = {
+  name: string; tagline: string; address: string; phone: string; email: string
+  website: string; receiptFooter: string; version: string | null
+}
+
 export type Table = {
   id: number
   number: number
@@ -99,6 +104,8 @@ const page = (beforeId?: number) => {
 }
 
 export const api = {
+  restaurantProfile: (signal?: AbortSignal) => request<RestaurantProfile>('/restaurant-profile', { signal }),
+  saveRestaurantProfile: (profile: RestaurantProfile) => put<RestaurantProfile>('/restaurant-profile', profile),
   me: () => request<User>('/auth/me'),
   login: async (username: string, password: string) => {
     await post('/auth/login', { username, password })

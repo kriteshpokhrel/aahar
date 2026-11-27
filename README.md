@@ -38,3 +38,12 @@ and applied following the [operations guide](Aahar-API/OPERATIONS.md).
 The frontend supports the older API, but disables additional rounds when
 `roundCount` is absent. Offline migration review and database-free tests are
 not evidence that the upgrade has been applied or live-verified.
+
+## Restaurant settings
+
+Administrators can configure shared business details under **Management →
+Restaurant settings**. The guest menu, staff workspace and receipts reuse that
+profile. Its external versioned JSON file needs no migration of its own; see
+the [backend guide](Aahar-API/BACKEND.md#shared-restaurant-settings) for storage,
+concurrency and backup requirements. This does not remove the running-rounds
+schema requirement for the full source backend.

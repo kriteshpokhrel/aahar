@@ -31,9 +31,12 @@ import type { PendingPayment, PendingRound } from './billRecovery'
 import { defaultPreferences, parsePreferences, preferencesKey } from './preferences'
 import type { WorkspacePreferences } from './preferences'
 import { WorkspaceSettings } from './WorkspaceSettings'
+import { RestaurantSettings } from './RestaurantSettings'
+import { RestaurantContext, useRestaurant, useRestaurantProfile } from './restaurantProfile'
+import { RestaurantProfileNotice } from './RestaurantProfileNotice'
 import './App.css'
 
-type Page = 'pos' | 'tables' | 'kitchen' | 'billing' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests' | 'staff' | 'password' | 'settings'
+type Page = 'pos' | 'tables' | 'kitchen' | 'billing' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests' | 'staff' | 'password' | 'settings' | 'restaurant'
 type Cart = Record<number, number>
 
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
@@ -50,6 +53,7 @@ const navigation: { id: Page; label: string; icon: typeof Grid2X2 }[] = [
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'reports', label: 'Reports', icon: ClipboardList },
   { id: 'staff', label: 'Staff accounts', icon: Users },
+  { id: 'restaurant', label: 'Restaurant settings', icon: Store },
   { id: 'password', label: 'Change password', icon: KeyRound },
   { id: 'settings', label: 'Workspace settings', icon: Settings },
 ]
@@ -99,6 +103,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [checking, setChecking] = useState(!guestPath)
   const [demo, setDemo] = useState(false)
+  const restaurant = useRestaurantProfile(demo || sampleGuest)
   const [page, setPage] = useState<Page>(guestPath ? 'guest' : 'pos')
   const [menu, setMenu] = useState<MenuItem[]>(sampleGuest ? demoMenu : [])
   const [tables, setTables] = useState<Table[]>([])
@@ -430,22 +435,23 @@ function App() {
 
   if (checking) return <div className="full-message" role="status">Opening Aahar…</div>
   if (!user && !guestPath) return <><SignIn onLogin={currentUser => { loadRecovery(currentUser, false); setAuthNotice(''); setLoading(true); setUser(currentUser) }} onDemo={startDemo} authNotice={authNotice} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
-  if (guestPath) return <GuestMenu menu={menu} loading={loading} error={error} retry={refresh} sample={sampleGuest} />
+  if (guestPath) return <RestaurantContext.Provider value={restaurant}><GuestMenu menu={menu} loading={loading} error={error} retry={refresh} sample={sampleGuest} /></RestaurantContext.Provider>
 
   const title = navigation.find(item => item.id === page)?.label ?? 'Guest menu'
   const canManage = !demo && ['admin', 'manager'].includes(user?.role.toLowerCase() ?? '')
   const canAdmin = !demo && user?.role.toLowerCase() === 'admin'
   const canServe = demo || ['admin', 'manager', 'staff'].includes(user?.role.toLowerCase() ?? '')
   const canComplete = demo || ['admin', 'manager', 'kitchen'].includes(user?.role.toLowerCase() ?? '')
-  const visibleNavigation = navigation.filter(item => (item.id !== 'guest-requests' || (canServe && !demo)) && (item.id !== 'staff' || canAdmin) && (item.id !== 'password' || !demo) && (!['inventory', 'reports'].includes(item.id) || canManage || demo))
+  const visibleNavigation = navigation.filter(item => (item.id !== 'guest-requests' || (canServe && !demo)) && (!['staff', 'restaurant'].includes(item.id) || canAdmin) && (item.id !== 'password' || !demo) && (!['inventory', 'reports'].includes(item.id) || canManage || demo))
   const serviceNavigation = visibleNavigation.filter(item => ['pos', 'tables', 'kitchen', 'billing', 'guest-requests'].includes(item.id))
-  const managementNavigation = visibleNavigation.filter(item => ['menu', 'inventory', 'reports', 'staff'].includes(item.id))
+  const managementNavigation = visibleNavigation.filter(item => ['menu', 'inventory', 'reports', 'staff', 'restaurant'].includes(item.id))
   const accountNavigation = visibleNavigation.filter(item => item.id === 'password' || item.id === 'settings')
-  return <div className={`app-shell density-${preferences.density}`}>
+  return <RestaurantContext.Provider value={restaurant}><div className={`app-shell density-${preferences.density}`}>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="sidebar"><Brand /><nav aria-label="Main navigation">{[{ name: 'Service', items: serviceNavigation }, { name: 'Management', items: managementNavigation }].map(group => group.items.length > 0 && <div className="nav-group" key={group.name}><div className="workspace-label">{group.name}</div>{group.items.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => { setInventoryLowOnly(false); setPage(id); setNotice('') }} aria-current={page === id ? 'page' : undefined}><Icon size={18} strokeWidth={1.7} />{label}{page === id && <span className="nav-indicator" />}</button>)}</div>)}</nav><div className="sidebar-bottom"><button className="nav-item guest-link" onClick={() => { setPage('guest'); setNotice('') }} aria-current={page === 'guest' ? 'page' : undefined}><Store size={18} /> Guest menu <ArrowRight size={15} /></button><div className="account-group"><div className="profile"><span className="avatar">{user?.username.slice(0, 1).toUpperCase()}</span><span><strong>{user?.username}</strong><small>{demo ? 'Sample workspace' : user?.role}</small></span></div>{accountNavigation.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} aria-current={page === id ? 'page' : undefined} onClick={() => { setPage(id); setNotice('') }}><Icon size={18} />{label}</button>)}<button className="nav-item" onClick={signOut}><LogOut size={18} /> Sign out</button></div></div></aside>
-    <main className="main" id="main-content" tabIndex={-1}><header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <strong>{title}</strong></div><div className="top-actions">{demo && <span className="demo-badge">SAMPLE MODE</span>}<span className="today"><span className="online-dot" /> {demo ? 'Example data' : 'Restaurant workspace'}</span><button className="icon-button" aria-label="About this workspace" onClick={() => setNotice('Aahar is a restaurant workspace. Payments are simulated and receipts are not IRD compliant.')}><CircleHelp size={19} /></button></div></header>
+    <main className="main" id="main-content" tabIndex={-1}><header className="topbar"><div className="breadcrumb"><span className="workspace-identity">{restaurant.profile?.name || 'Workspace'}</span> <span>/</span> <strong>{title}</strong></div><div className="top-actions">{demo && <span className="demo-badge">SAMPLE MODE</span>}<span className="today"><span className="online-dot" /> {demo ? 'Example data' : 'Restaurant workspace'}</span><button className="icon-button" aria-label="About this workspace" onClick={() => setNotice('Aahar is a restaurant workspace. Payments are simulated; receipts are not tax invoices.')}><CircleHelp size={19} /></button></div></header>
       <div className="content">
+        <RestaurantProfileNotice />
         {(error || workspaceIncomplete) && <div className="alert global-alert" role="alert"><span>{error} Displayed workspace data may be out of date.</span><button onClick={() => void refresh()}>Refresh workspace</button>{!workspaceIncomplete && <button aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button>}</div>}
         {recoveryError && <div className="alert global-alert" role="alert">{recoveryError}</div>}
         {pendingRound && <div className="alert global-alert" role="alert"><span>Kitchen round for order #{pendingRound.orderId} is pending confirmation. Keep this tab open; retrying sends the same saved items and request ID.</span><button disabled={busy || loading} onClick={() => void sendRound(pendingRound)}>Retry saved round</button><button disabled={busy || loading} onClick={() => void refresh()}>Refresh</button></div>}
@@ -472,6 +478,7 @@ function App() {
         {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory uncertain={uncertainPurchase} setUncertain={setUncertainPurchase} initialLowOnly={inventoryLowOnly} /></>}
         {page === 'reports' && canManage && <><PageHeading eyebrow="THE BIG PICTURE" title="Reports" text="Make sense of your service." /><SalesReport /></>}
         {page === 'staff' && canAdmin && <><PageHeading eyebrow="YOUR TEAM" title="Staff accounts" text="Create access for your restaurant team." /><StaffAccounts /></>}
+        {page === 'restaurant' && canAdmin && <><PageHeading eyebrow="YOUR BUSINESS" title="Restaurant settings" text="Manage the business details guests and staff see." /><RestaurantSettings /></>}
         {page === 'password' && !demo && <><PageHeading eyebrow="YOUR ACCOUNT" title="Account security" text="Update your password." /><ChangePassword onSignedOut={endSession} /></>}
         {page === 'settings' && <><PageHeading eyebrow="YOUR WORKSPACE" title="Settings" text="Configure this browser’s workflow." /><WorkspaceSettings preferences={preferences} error={preferenceError} save={savePreferences} /></>}
         {page === 'guest' && <><PageHeading eyebrow="SHARE WHAT’S GOOD" title="Guest menu" text={demo ? 'Preview the sample menu.' : 'Share the menu and let guests send requests for staff review.'} /><div className="surface guest-preview"><div><span className="eyebrow">GUEST EXPERIENCE</span><h2>Let the menu do the talking.</h2><p>Open the guest menu on this computer. A localhost link cannot be used by guests on other devices.</p>{!demo && <label className="field guest-table-select">Guest link destination<select value={guestTable} onChange={event => setGuestTable(event.target.value)}><option value="">Takeaway</option>{tables.map(table => <option value={table.id} key={table.id}>Table {table.number}</option>)}</select></label>}<a className="button primary" href={guestMenuUrl(window.location.href, demo, guestTable)} target="_blank" rel="noreferrer">Open guest menu <ArrowRight size={16} /></a></div><GuestQr url={guestMenuUrl(window.location.href, demo, guestTable)} /></div></>}
@@ -479,7 +486,7 @@ function App() {
     </main>
     {receiptOrder?.payment && <Receipt order={receiptOrder} table={tables.find(table => table.id === receiptOrder.tableId)} close={() => setReceiptOrder(null)} />}
     <nav className="mobile-nav" aria-label="Mobile navigation">{visibleNavigation.map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? 'active' : ''} onClick={() => { setInventoryLowOnly(false); setPage(id); setNotice('') }} aria-label={label} aria-current={page === id ? 'page' : undefined}><Icon size={19} /><span>{label === 'Point of sale' ? 'POS' : label}</span></button>)}<button className={page === 'guest' ? 'active' : ''} onClick={() => { setPage('guest'); setNotice('') }} aria-label="Guest menu" aria-current={page === 'guest' ? 'page' : undefined}><Store size={19} /><span>Guest</span></button><button onClick={signOut} aria-label="Sign out"><LogOut size={19} /><span>Exit</span></button></nav>
-  </div>
+  </div></RestaurantContext.Provider>
 }
 
 function PageHeading({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
@@ -489,11 +496,12 @@ function Empty({ title, text }: { title: string; text: string }) {
   return <div className="empty-state"><strong>{title}</strong><p>{text}</p></div>
 }
 function GuestMenu({ menu, loading, error, retry, sample }: { menu: MenuItem[]; loading: boolean; error: string; retry: () => Promise<void>; sample: boolean }) {
+  const { profile } = useRestaurant()
   const available = menu.filter(item => item.isAvailable)
   const tableParam = new URLSearchParams(window.location.search).get('tableId')
   const invalidTable = tableParam !== null && (!/^[1-9]\d*$/.test(tableParam) || Number(tableParam) > 2147483647)
   const tableId = tableParam === null || invalidTable ? null : Number(tableParam)
-  return <main className="guest-page"><header><Brand /><a href={window.location.pathname}><ArrowLeft size={16} /> Staff sign in</a></header><div className="guest-content"><div className="section-heading"><div><span className="eyebrow">{sample ? 'SAMPLE MENU · EXAMPLE DATA' : 'GUEST MENU'}</span><h1>Explore the menu</h1></div><span className="count-label">{available.length} items</span></div>{error && <div className="alert" role="alert">{error} <button onClick={() => void retry()}>Retry</button></div>}{loading && <p role="status">Loading menu…</p>}<GuestOrdering menu={menu} tableId={tableId} invalidTable={invalidTable} menuError={error} menuLoading={loading} refreshMenu={retry} sample={sample} /></div><footer><Brand /><span>GOOD FOOD IS BETTER TOGETHER</span></footer></main>
+  return <main className="guest-page"><header><Brand /><a href={window.location.pathname}><ArrowLeft size={16} /> Staff sign in</a></header><div className="guest-content"><RestaurantProfileNotice /><div className="section-heading"><div><span className="eyebrow">{sample ? 'SAMPLE MENU · EXAMPLE DATA' : 'GUEST MENU'}</span><h1>{profile?.name || 'Explore the menu'}</h1>{profile?.tagline && <p className="restaurant-tagline">{profile.tagline}</p>}</div><span className="count-label">{available.length} items</span></div>{profile && (profile.address || profile.phone || profile.email || profile.website) && <details className="restaurant-contact"><summary>Restaurant information</summary>{profile.address && <p>{profile.address}</p>}{profile.phone && <p>Phone: {profile.phone}</p>}{profile.email && <p>Email: {profile.email}</p>}{profile.website && <p><a href={profile.website} target="_blank" rel="noreferrer">Visit website <ArrowRight size={14} /></a></p>}</details>}{error && <div className="alert" role="alert">{error} <button onClick={() => void retry()}>Retry</button></div>}{loading && <p role="status">Loading menu…</p>}<GuestOrdering menu={menu} tableId={tableId} invalidTable={invalidTable} menuError={error} menuLoading={loading} refreshMenu={retry} sample={sample} /></div><footer><Brand /><span>GOOD FOOD IS BETTER TOGETHER</span></footer></main>
 }
 
 export default App

@@ -2,6 +2,27 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api, ApiError } from '../src/api.ts'
 
+test('restaurant profile is shared and saves preserve its revision with CSRF; stale updates are surfaced', async () => {
+  const profile = { name: 'Test restaurant', tagline: '', address: '', phone: '', email: '', website: '', receiptFooter: '', version: '59b8a923-1914-4b4a-ab8d-45a95c788d75' }
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'profile-token' })
+    if (url === '/api/restaurant-profile' && options.method === 'PUT') return Response.json({ detail: 'Settings changed' }, { status: 409 })
+    if (url === '/api/restaurant-profile') return Response.json(profile)
+    return new Response(null, { status: 204 })
+  }
+  try {
+    assert.deepEqual(await api.restaurantProfile(), profile)
+    await assert.rejects(api.saveRestaurantProfile(profile), error => error instanceof ApiError && error.status === 409)
+    const update = calls.find(call => call.options.method === 'PUT')
+    assert.deepEqual(JSON.parse(update.options.body), profile)
+    assert.equal(update.options.headers.get('X-CSRF-TOKEN'), 'profile-token')
+    assert.equal(update.options.credentials, 'same-origin')
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
 test('round retries use the same request ID and unchanged items', async () => {
   const calls = []
   const originalFetch = globalThis.fetch
