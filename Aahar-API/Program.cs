@@ -63,6 +63,15 @@ builder.Services.AddRateLimiter(o =>
 });
 
 var app = builder.Build();
+if (args.Contains("--seed-demo-data"))
+{
+    if (!app.Environment.IsDevelopment())
+        throw new InvalidOperationException("Demo seeding is available only in the Development environment.");
+    using var scope = app.Services.CreateScope();
+    await DemoDataSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<RestaurantDbContext>());
+    Console.WriteLine("Fictional demo menu, tables and stock created.");
+    return;
+}
 if (args.Contains("--bootstrap-admin"))
 {
     var username = Environment.GetEnvironmentVariable("AAHAR_ADMIN_USERNAME")?.Trim().ToLowerInvariant();

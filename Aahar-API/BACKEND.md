@@ -42,6 +42,19 @@ dotnet dev-certs https --trust
 dotnet run --project Aahar-API --launch-profile https
 ```
 
+For an explicitly selected new, empty restaurant database, an optional
+fictional demonstration menu, tables, ingredients, recipes and opening stock
+can be added after migration. This does not create user accounts or passwords.
+It refuses to run when restaurant data already exists:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project Aahar-API --no-launch-profile -- --seed-demo-data
+```
+
+Confirm `ConnectionStrings__Aahar` points to the intended dedicated database
+before running it. Demo prices, recipes and quantities are illustrative, not
+operating data.
+
 The API listens at `https://localhost:7041`. Use an HTTPS frontend bound to localhost and a **same-origin** `/api` development proxy to that HTTPS address, preserving a `Host` of `localhost`. Trust the local development certificate; do not disable certificate validation for deployed use. The API rejects non-loopback clients and non-HTTPS requests. Do not expose the frontend proxy to a network, since the API sees the proxy as loopback. Data-protection keys must be protected by the local OS account; default development storage may not encrypt them at rest.
 
 `Business:TimeZone` in `appsettings.json` explicitly defaults to `Asia/Kathmandu` for a Nepal-local restaurant. Set `Business__TimeZone` to the restaurant's system time-zone ID before starting the API if it operates elsewhere. A missing or invalid ID prevents startup. Reporting uses this configured zone, not the server's implicit local zone; changing it can change which business day includes a historical payment. Keep the operating system's time-zone data current.
@@ -115,6 +128,14 @@ Payments are **simulated only**; this is **not IRD certified** and is not suitab
 
 ## Verification and limitations
 
-`dotnet test Aahar.Tests/Aahar.Tests.csproj` runs isolated domain/mapping and HTTP cookie, CSRF, and role tests without a PostgreSQL connection. Before operational use, run end-to-end migration, transaction/concurrency, and recovery tests against a separately provisioned disposable database with explicit approval. The included tests do not verify PostgreSQL concurrency or migrations against a live server.
+`dotnet test Aahar.Tests/Aahar.Tests.csproj` runs isolated domain/mapping and
+HTTP cookie, CSRF, and role tests without a PostgreSQL connection. To opt in to
+the PostgreSQL workflow test, set `AAHAR_TEST_CONNECTION` to a separately
+provisioned, migrated local database named `aahar_test`. The test refuses other
+database names and non-loopback hosts; it adds uniquely named test records and
+does not reset or delete data. The test exercises authentication, orders,
+kitchen, simulated payment, guest requests, authorization and selected stock
+and table races. It does not replace full end-to-end, migration-upgrade or
+recovery verification.
 
 This is an intentionally incomplete portfolio foundation: no supplier deletion, purchase receipt correction/returns or cost-based valuation, guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.
