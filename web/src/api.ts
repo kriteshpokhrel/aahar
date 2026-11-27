@@ -104,6 +104,10 @@ export const api = {
     csrfToken = null
     return request<User>('/auth/me')
   },
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    try { await post<void>('/auth/change-password', { currentPassword, newPassword }) }
+    finally { csrfToken = null }
+  },
   logout: async () => {
     await post('/auth/logout')
     csrfToken = null

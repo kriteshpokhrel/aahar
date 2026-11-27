@@ -6,6 +6,8 @@ The intended deployment is one restaurant on one computer, with a localhost-boun
 
 Protect the operating-system account, PostgreSQL access and backups, HTTPS private key, and ASP.NET Core data-protection keys. Someone who controls the host, application, browser session, database, or data-protection keys is outside the protections provided here. Default development key storage may not encrypt keys at rest. This design does not provide production hardening, isolation between local OS users, or protection against a compromised frontend or cross-site scripting.
 
+Review the PostgreSQL server's `pg_hba.conf` and role permissions before storing real data. Local or loopback `trust` authentication lets a local client connect as a database role without its password, bypassing application authorization. Changing shared PostgreSQL authentication can affect other applications; review and approve that change separately.
+
 Menu images are stored outside application paths, with names generated from numeric menu IDs. Only Admin/Manager can replace or remove them; anonymous retrieval is limited to available items. Input is size- and dimension-limited, decoded and normalized to PNG rather than serving uploaded bytes. The local image directory and its parent paths must remain protected from untrusted changes, including symlinks. Use a separate image directory per database.
 
 ## Authentication and requests
@@ -22,6 +24,6 @@ Login and guest submission have separate fixed-window limits of five attempts pe
 
 ## Data integrity and remaining risks
 
-Serializable transactions, uniqueness constraints, explicit transitions, and stock checks are intended to prevent double payment, conflicting decisions, and negative stock. They have not been verified against live PostgreSQL concurrency. Actor/reason history exists for selected workflows but is not a complete tamper-evident audit log. Users with database write access can bypass application rules. Guest requests lack expiration and submission idempotency; manual stock receipts also lack idempotency.
+Serializable transactions, uniqueness constraints, explicit transitions, and stock checks are intended to prevent double payment, conflicting decisions, and negative stock. Selected competing stock sends and table assignments have been exercised against a dedicated PostgreSQL test database; broader concurrency behavior remains unverified. Actor/reason history exists for selected workflows but is not a complete tamper-evident audit log. Users with database write access can bypass application rules. Guest requests lack expiration and submission idempotency; manual stock receipts also lack idempotency.
 
 No sensitive credentials, request tokens, guest tokens, full connection strings, or database dumps belong in source control, chat, logs, or issue reports. Inspect proxy and application logging configuration before deployment. Review security, backup, and recovery procedures for the actual host before using real data. Payments are simulated and are not IRD certified.

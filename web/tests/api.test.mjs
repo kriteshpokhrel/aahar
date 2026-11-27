@@ -2,6 +2,47 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api, ApiError } from '../src/api.ts'
 
+test('password change uses CSRF and obtains a fresh token before signing in again', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  let token = 0
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: `change-token-${++token}` })
+    if (url === '/api/auth/me') return Response.json({ username: 'operator', role: 'Staff' })
+    return new Response(null, { status: 204 })
+  }
+  try {
+    await api.changePassword('old-example', 'new-example-password')
+    const change = calls.find(call => call.url === '/api/auth/change-password')
+    assert.equal(change.options.method, 'POST')
+    assert.equal(change.options.credentials, 'same-origin')
+    assert.equal(change.options.headers.get('X-CSRF-TOKEN'), 'change-token-1')
+    assert.deepEqual(JSON.parse(change.options.body), { currentPassword: 'old-example', newPassword: 'new-example-password' })
+    await api.login('operator', 'new-example-password')
+    const login = calls.find(call => call.url === '/api/auth/login')
+    assert.equal(login.options.headers.get('X-CSRF-TOKEN'), 'change-token-2')
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
+test('password change errors are surfaced and do not leave a cached CSRF token', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  let token = 0
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: `error-token-${++token}` })
+    if (url === '/api/auth/change-password') return Response.json({ detail: 'Password change rejected' }, { status: 409 })
+    if (url === '/api/auth/me') return Response.json({ username: 'operator', role: 'Staff' })
+    return new Response(null, { status: 204 })
+  }
+  try {
+    await assert.rejects(api.changePassword('old-example', 'new-example-password'), error => error instanceof ApiError && error.status === 409)
+    await api.login('operator', 'new-example-password')
+    assert.equal(calls.find(call => call.url === '/api/auth/login').options.headers.get('X-CSRF-TOKEN'), 'error-token-2')
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
 test('menu image mutations send raw image content and CSRF protection', async () => {
   const calls = []
   const originalFetch = globalThis.fetch

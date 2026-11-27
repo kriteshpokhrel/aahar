@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using SkiaSharp;
 
 namespace Aahar.Tests;
 
@@ -45,7 +46,8 @@ public class PostgresWorkflowTests
             await db.SaveChangesAsync();
         }
 
-        await using var factory = new RealDatabaseFactory(connection);
+        using var imageDirectory = new TestImageDirectory();
+        await using var factory = new RealDatabaseFactory(connection, imageDirectory.Path);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
@@ -59,6 +61,15 @@ public class PostgresWorkflowTests
 
         var menu = await Read<MenuDto>(await client.PostAsJsonAsync("/api/menu",
             new MenuRequest("Item " + suffix, null, "Test", 125m, true)));
+        using var bitmap = new SKBitmap(2, 2);
+        bitmap.Erase(SKColors.Red);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var imageContent = new ByteArrayContent(encoded.ToArray());
+        imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PutAsync($"/api/menu/{menu.Id}/image", imageContent)).StatusCode);
+        Assert.Equal("image/png", (await client.GetAsync($"/api/menu/{menu.Id}/image")).Content.Headers.ContentType!.MediaType);
         var ingredient = await Read<IngredientDto>(await client.PostAsJsonAsync("/api/ingredients",
             new IngredientRequest("Ingredient " + suffix, "kg", 5m)));
         (await client.PutAsJsonAsync($"/api/menu/{menu.Id}/recipe",
@@ -82,6 +93,14 @@ public class PostgresWorkflowTests
         Assert.Equal(250m, paid.Payment!.Amount);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await client.PostAsJsonAsync($"/api/orders/{order.Id}/payments", new PaymentRequest("Cash"))).StatusCode);
+        var localPayment = TimeZoneInfo.ConvertTimeFromUtc(paid.Payment.PaidAt, TimeZoneInfo.FindSystemTimeZoneById("Asia/Kathmandu"));
+        var date = DateOnly.FromDateTime(localPayment).ToString("yyyy-MM-dd");
+        var report = await client.GetFromJsonAsync<BestSellingReport>(
+            $"/api/reports/best-selling?fromDate={date}&toDate={date}&limit=100");
+        Assert.NotEmpty(report!.Items);
+        Assert.All(report.Items, item => Assert.True(item.Quantity > 0 && item.Revenue >= 0));
+        var sales = await client.GetFromJsonAsync<PaidSalesReport>($"/api/reports/sales?fromDate={date}&toDate={date}");
+        Assert.True(sales!.OrdersPaid >= 1 && sales.Total >= 250m);
 
         var first = await Read<OrderDto>(await client.PostAsJsonAsync("/api/orders",
             new CreateOrderRequest(null, [new OrderLineRequest(menu.Id, 2)])));
@@ -135,6 +154,16 @@ public class PostgresWorkflowTests
         Assert.Equal("Accepted", after!.Status);
         Assert.Equal(accepted.Order.Id, after.OrderId);
 
+        var newPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/auth/change-password",
+            new ChangePasswordRequest { CurrentPassword = password, NewPassword = newPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/auth/me")).StatusCode);
+        await RefreshCsrf(client);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(username, password))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(username, newPassword))).StatusCode);
+
         await using var verify = new RestaurantDbContext(options);
         var existingMenuCount = await verify.MenuItems.CountAsync();
         await Assert.ThrowsAsync<InvalidOperationException>(() => DemoDataSeeder.SeedAsync(verify));
@@ -157,12 +186,26 @@ public class PostgresWorkflowTests
     private sealed record Csrf(string RequestToken);
 }
 
-internal sealed class RealDatabaseFactory(string connection) : WebApplicationFactory<Program>
+internal sealed class RealDatabaseFactory(string connection, string imageDirectory) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((_, config) =>
-            config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Aahar"] = connection }));
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Aahar"] = connection,
+                ["MenuImages:Directory"] = imageDirectory
+            }));
         builder.ConfigureServices(services => services.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter, LoopbackFilter>());
+    }
+}
+
+internal sealed class TestImageDirectory : IDisposable
+{
+    public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aahar-test-images-" + Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(Path)) Directory.Delete(Path, recursive: true);
     }
 }

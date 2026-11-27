@@ -15,9 +15,29 @@ npm run lint
 npm test
 ```
 
-Vite proxies `/api` to `https://localhost:7041` by default; set `AAHAR_API_URL` to change the backend origin. The proxy accepts the development backend's self-signed certificate. For an HTTPS frontend, set `AAHAR_DEV_CERT` and `AAHAR_DEV_KEY` to paths for a locally trusted certificate and key before starting Vite. Do not expose the development server publicly. The frontend and API are same-origin from the browser's perspective; the backend needs no CORS configuration for this setup.
+Vite proxies `/api` to `https://localhost:7041` by default; set `AAHAR_API_URL` to change the backend origin. The proxy accepts the development backend's self-signed certificate. Real authentication requires HTTPS: set `AAHAR_DEV_CERT` and `AAHAR_DEV_KEY` to paths for a locally trusted certificate and key before starting Vite, and open the frontend at `https://localhost:5173`. HTTP sample mode cannot authenticate to the API.
+
+For example, after installing .NET 10 and approving trust of its local development certificate, export it into a private directory outside the repository:
+
+```sh
+dotnet dev-certs https --trust
+mkdir -p "$HOME/.local/share/aahar/tls"
+chmod 700 "$HOME/.local/share/aahar/tls"
+umask 077
+dotnet dev-certs https --export-path "$HOME/.local/share/aahar/tls/localhost.pem" --format PEM --no-password
+export AAHAR_DEV_CERT="$HOME/.local/share/aahar/tls/localhost.pem"
+export AAHAR_DEV_KEY="$HOME/.local/share/aahar/tls/localhost.key"
+npm run dev -- --host localhost
+```
+
+Keep the private key private and never commit it. The trust step changes the
+machine's certificate trust and can prompt for approval. Do not expose the
+development server publicly. The frontend and API are same-origin from the
+browser's perspective; the backend needs no CORS configuration for this setup.
 
 The client expects cookie authentication and `GET /api/auth/csrf` to return a request token. It sends `X-CSRF-TOKEN` on mutations and refreshes the token after login and logout. API routes and DTOs are isolated in `src/api.ts`; the backend remains responsible for authorization and validation.
+
+Signed-in users can change their own password. A successful change signs out the current browser and requires a fresh sign-in; other existing sessions remain active until they expire. If the result cannot be confirmed, sign out and try the new password before retrying.
 
 The POS, tables, kitchen, menu catalogue, inventory, sales overview and guest menu use the API. Table availability comes from the server; order conflicts are reported rather than silently retried. Staff can cancel draft orders; managers and administrators can also cancel submitted orders and must choose whether to return stock or mark it as waste. Menu and table creation, menu edits, inventory adjustments and sales are available to managers and administrators.
 

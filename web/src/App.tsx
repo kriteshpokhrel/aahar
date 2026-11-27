@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   ArrowLeft, ArrowRight, BookOpen, ChefHat, ChevronDown,
-  CircleHelp, ClipboardList, Clock3, Grid2X2, LayoutDashboard, LogOut,
+  CircleHelp, ClipboardList, Clock3, Grid2X2, KeyRound, LayoutDashboard, LogOut,
   Minus, Package, Plus, Search, ShoppingBag, Sparkles, Store, Users, UtensilsCrossed, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
@@ -22,9 +22,10 @@ import { canAddToCart, unavailableCartIds } from './orderSafety'
 import { ServiceOverview } from './ServiceOverview'
 import { StaffAccounts } from './StaffAccounts'
 import { MenuImage } from './MenuImage'
+import { ChangePassword } from './ChangePassword'
 import './App.css'
 
-type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests' | 'staff'
+type Page = 'pos' | 'tables' | 'kitchen' | 'menu' | 'inventory' | 'reports' | 'guest' | 'guest-requests' | 'staff' | 'password'
 type Cart = Record<number, number>
 
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
@@ -40,6 +41,7 @@ const navigation: { id: Page; label: string; icon: typeof Grid2X2 }[] = [
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'reports', label: 'Reports', icon: ClipboardList },
   { id: 'staff', label: 'Staff accounts', icon: Users },
+  { id: 'password', label: 'Change password', icon: KeyRound },
 ]
 
 async function fetchWorkspace(guest: boolean) {
@@ -64,7 +66,7 @@ function Brand({ light = false }: { light?: boolean }) {
   return <div className={`brand ${light ? 'brand-light' : ''}`}><span className="brand-mark"><UtensilsCrossed size={19} strokeWidth={1.8} /></span><span>aahar<span className="brand-dot">.</span><small>RESTAURANT WORKSPACE</small></span></div>
 }
 
-function SignIn({ onLogin, onDemo }: { onLogin: (user: User) => void; onDemo: () => void }) {
+function SignIn({ onLogin, onDemo, authNotice }: { onLogin: (user: User) => void; onDemo: () => void; authNotice: string }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -76,7 +78,7 @@ function SignIn({ onLogin, onDemo }: { onLogin: (user: User) => void; onDemo: ()
   }
   return <main className="login-layout">
     <section className="login-story"><Brand light /><div className="story-copy"><span className="eyebrow light-eyebrow">MADE FOR THE WAY YOU SERVE</span><h1>Good food deserves<br /><em>good flow.</em></h1><p>A calmer way to manage the moving parts of your restaurant, from the first order to the last table.</p><div className="story-rule" /><span className="story-foot"><span>01 / 03</span> &nbsp; A LITTLE MORE ROOM TO HOSPITABLY HOST</span></div><div className="story-illustration" aria-hidden="true"><div className="plate plate-one" /><div className="plate plate-two" /><div className="plate plate-three" /><span>THE ART OF<br />GOOD SERVICE</span></div><div className="story-bottom">A thoughtful workspace for restaurants <span>EST. FOR EVERY DAY</span></div></section>
-    <section className="login-panel"><div className="login-inner"><span className="eyebrow">WELCOME TO AAHAR</span><h2>Welcome back.</h2><p>Sign in to pick up where you left off.</p><form onSubmit={submit}><label>Username<input autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required placeholder="Enter your username" /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Enter your password" /></label>{error && <div className="alert" role="alert">{error}</div>}<button className="button primary wide" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={17} /></button></form><div className="login-divider"><span>OR TAKE A LOOK AROUND</span></div><button className="button secondary wide" onClick={onDemo}>Explore sample workspace <ArrowRight size={17} /></button><p className="login-note">Sample mode uses temporary example data. No changes are sent to the server.</p></div><div className="login-footer">© Aahar <span>MADE FOR BETTER SERVICE</span></div></section>
+    <section className="login-panel"><div className="login-inner"><span className="eyebrow">WELCOME TO AAHAR</span><h2>Welcome back.</h2><p>Sign in to pick up where you left off.</p>{authNotice && <div className="notice" role="status">{authNotice}</div>}<form onSubmit={submit}><label>Username<input autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required placeholder="Enter your username" /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Enter your password" /></label>{error && <div className="alert" role="alert">{error}</div>}<button className="button primary wide" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={17} /></button></form><div className="login-divider"><span>OR TAKE A LOOK AROUND</span></div><button className="button secondary wide" onClick={onDemo}>Explore sample workspace <ArrowRight size={17} /></button><p className="login-note">Sample mode uses temporary example data. No changes are sent to the server.</p></div><div className="login-footer">© Aahar <span>MADE FOR BETTER SERVICE</span></div></section>
   </main>
 }
 
@@ -96,6 +98,7 @@ function App() {
   const [error, setError] = useState('')
   const [workspaceIncomplete, setWorkspaceIncomplete] = useState(false)
   const [notice, setNotice] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
   const [cart, setCart] = useState<Cart>({})
   const [cartNotes, setCartNotes] = useState<Record<number, string>>({})
   const [tableId, setTableId] = useState<number | null>(null)
@@ -142,13 +145,16 @@ function App() {
   }, [checking, user, guestPath, page])
 
   function startDemo() {
-    setDemo(true); setUser({ username: 'Sample user', role: 'Demo' }); setMenu(demoMenu); setTables(demoTables); setOrders(demoOrders); setTickets(demoTickets); setError(''); setWorkspaceIncomplete(false); setLoading(false)
+    setAuthNotice(''); setDemo(true); setUser({ username: 'Sample user', role: 'Demo' }); setMenu(demoMenu); setTables(demoTables); setOrders(demoOrders); setTickets(demoTickets); setError(''); setWorkspaceIncomplete(false); setLoading(false)
+  }
+  function endSession(nextNotice = '') {
+    setUser(null); setDemo(false); setMenu([]); setTables([]); setOrders([]); setTickets([]); setCart({}); setCartNotes({}); setTableId(null); setOrderType('dine-in'); setPage('pos'); setLoading(false); setError(''); setWorkspaceIncomplete(false); setNotice(''); setAuthNotice(nextNotice)
   }
   async function signOut() {
     if (!demo) {
       try { await api.logout() } catch (e) { setError(message(e)); return }
     }
-    setUser(null); setDemo(false); setMenu([]); setTables([]); setOrders([]); setTickets([]); setCart({}); setCartNotes({}); setTableId(null); setOrderType('dine-in'); setPage('pos'); setLoading(false)
+    endSession()
   }
   const categories = useMemo(() => ['All items', ...new Set(menu.map(item => item.category).filter((value): value is string => !!value))], [menu])
   const visibleMenu = menu.filter(item => item.isAvailable && (category === 'All items' || item.category === category) && `${item.name} ${item.description ?? ''}`.toLowerCase().includes(search.toLowerCase()))
@@ -256,7 +262,7 @@ function App() {
   }
 
   if (checking) return <div className="full-message" role="status">Opening Aahar…</div>
-  if (!user && !guestPath) return <><SignIn onLogin={currentUser => { setLoading(true); setUser(currentUser) }} onDemo={startDemo} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
+  if (!user && !guestPath) return <><SignIn onLogin={currentUser => { setAuthNotice(''); setLoading(true); setUser(currentUser) }} onDemo={startDemo} authNotice={authNotice} />{error && <div className="connection-error" role="alert">Could not check your session: {error}</div>}</>
   if (guestPath) return <GuestMenu menu={menu} loading={loading} error={error} retry={refresh} sample={sampleGuest} />
 
   const title = navigation.find(item => item.id === page)?.label ?? 'Guest menu'
@@ -264,7 +270,7 @@ function App() {
   const canAdmin = !demo && user?.role.toLowerCase() === 'admin'
   const canServe = demo || ['admin', 'manager', 'staff'].includes(user?.role.toLowerCase() ?? '')
   const canComplete = demo || ['admin', 'manager', 'kitchen'].includes(user?.role.toLowerCase() ?? '')
-  const visibleNavigation = navigation.filter(item => (item.id !== 'guest-requests' || (canServe && !demo)) && (item.id !== 'staff' || canAdmin))
+  const visibleNavigation = navigation.filter(item => (item.id !== 'guest-requests' || (canServe && !demo)) && (item.id !== 'staff' || canAdmin) && (item.id !== 'password' || !demo))
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="sidebar"><Brand /><div className="workspace-label">WORKSPACE</div><nav aria-label="Main navigation">{visibleNavigation.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => { setInventoryLowOnly(false); setPage(id); setNotice('') }} aria-current={page === id ? 'page' : undefined}><Icon size={18} strokeWidth={1.7} />{label}{page === id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="note-icon"><Sparkles size={16} /></span><strong>Made for service.</strong><p>A little more ease in every shift.</p></div><button className="nav-item guest-link" onClick={() => { setPage('guest'); setNotice('') }} aria-current={page === 'guest' ? 'page' : undefined}><Store size={18} /> Guest menu <ArrowRight size={15} /></button><button className="profile" aria-label={`Sign out ${user?.username ?? ''}`} onClick={signOut}><span className="avatar">{user?.username.slice(0, 1).toUpperCase()}</span><span><strong>{user?.username}</strong><small>{demo ? 'Sample workspace' : user?.role}</small></span><LogOut size={17} /></button></div></aside>
@@ -289,6 +295,7 @@ function App() {
         {page === 'inventory' && canManage && <><PageHeading eyebrow="STOCK & SUPPLIES" title="Inventory" text="Stay on top of what your kitchen needs." /><Inventory uncertain={uncertainPurchase} setUncertain={setUncertainPurchase} initialLowOnly={inventoryLowOnly} /></>}
         {page === 'reports' && canManage && <><PageHeading eyebrow="THE BIG PICTURE" title="Reports" text="Make sense of your service." /><SalesReport /></>}
         {page === 'staff' && canAdmin && <><PageHeading eyebrow="YOUR TEAM" title="Staff accounts" text="Create access for your restaurant team." /><StaffAccounts /></>}
+        {page === 'password' && !demo && <><PageHeading eyebrow="YOUR ACCOUNT" title="Account security" text="Update your password." /><ChangePassword onSignedOut={endSession} /></>}
         {page === 'guest' && <><PageHeading eyebrow="SHARE WHAT’S GOOD" title="Guest menu" text={demo ? 'Preview the sample menu.' : 'Share the menu and let guests send requests for staff review.'} /><div className="surface guest-preview"><div><span className="eyebrow">GUEST EXPERIENCE</span><h2>Let the menu do the talking.</h2><p>Open the guest menu on this computer. A localhost link cannot be used by guests on other devices.</p>{!demo && <label className="field guest-table-select">Guest link destination<select value={guestTable} onChange={event => setGuestTable(event.target.value)}><option value="">Takeaway</option>{tables.map(table => <option value={table.id} key={table.id}>Table {table.number}</option>)}</select></label>}<a className="button primary" href={guestMenuUrl(window.location.href, demo, guestTable)} target="_blank" rel="noreferrer">Open guest menu <ArrowRight size={16} /></a></div><GuestQr url={guestMenuUrl(window.location.href, demo, guestTable)} /></div></>}
       </div>
     </main>
