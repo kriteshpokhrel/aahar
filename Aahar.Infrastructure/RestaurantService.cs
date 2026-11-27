@@ -119,8 +119,16 @@ public sealed class RestaurantService(RestaurantDbContext db, IPasswordHasher<Us
         db.Recipes.AddRange(r.Ingredients!.Select(x => new RecipeIngredient { MenuItemId = menuId, IngredientId = x.IngredientId, Quantity = x.Quantity }));
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
     }
+    public static IQueryable<OrderDto> OrdersQuery(IQueryable<Order> orders) =>
+        orders.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).Select(x => new OrderDto(
+            x.Id, x.TableId, x.Status, x.CreatedAt,
+            x.Items.OrderBy(item => item.Id)
+                .Select(item => new OrderItemDto(item.MenuItemId, item.Name, item.Quantity, item.UnitPrice, item.Notes)).ToList(),
+            x.Items.Sum(item => item.UnitPrice * item.Quantity),
+            x.Payment == null ? null : new PaymentDto(x.Payment.Id, x.Payment.Method, x.Payment.Amount, x.Payment.PaidAt),
+            x.CancelledAt, x.CancelledBy, x.CancellationReason, x.CancellationStockDisposition, x.Tickets.Count));
     public async Task<IReadOnlyList<OrderDto>> OrdersAsync(CancellationToken ct) =>
-        (await db.Orders.AsNoTracking().Include(x => x.Items).Include(x => x.Payment).Include(x => x.Tickets).OrderByDescending(x => x.CreatedAt).ToListAsync(ct)).Select(ToDto).ToList();
+        await OrdersQuery(db.Orders.AsNoTracking().AsSingleQuery()).ToListAsync(ct);
     public async Task<OrderDto> CreateOrderAsync(CreateOrderRequest r, CancellationToken ct)
     {
         Check(r.TableId is null or > 0, "Invalid table.");

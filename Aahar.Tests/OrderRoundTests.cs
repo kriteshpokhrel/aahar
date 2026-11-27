@@ -1,5 +1,7 @@
 using Aahar.Domain;
 using Aahar.Application;
+using Aahar.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Json;
 
@@ -7,6 +9,56 @@ namespace Aahar.Tests;
 
 public class OrderRoundTests
 {
+    [Fact]
+    public void OrdersProjectionPreservesSnapshotsTotalsAndTicketCount()
+    {
+        var date = new DateTime(2026, 11, 27, 0, 0, 0, DateTimeKind.Utc);
+        var paidAt = date.AddHours(1);
+        var orders = new[]
+        {
+            new Order { Id = 1, Status = "Paid", CreatedAt = date, TableId = 3,
+                Items = [
+                    new() { Id = 2, MenuItemId = 7, Name = "New name", Quantity = 2, UnitPrice = 12, Notes = "hot" },
+                    new() { Id = 1, MenuItemId = 7, Name = "Old name", Quantity = 1, UnitPrice = 10 }
+                ],
+                Tickets = [new(), new()], Payment = new() { Id = 4, Method = "Cash", Amount = 34, PaidAt = paidAt } },
+            new Order { Id = 2, Status = "Draft", CreatedAt = date },
+            new Order { Id = 3, Status = "Cancelled", CreatedAt = date.AddDays(-1), CancelledAt = paidAt,
+                CancelledBy = "manager", CancellationReason = "closed", CancellationStockDisposition = "Waste" }
+        };
+        var result = RestaurantService.OrdersQuery(orders.AsQueryable()).ToList();
+        Assert.Equal(2, result[0].Id);
+        Assert.Equal(0, result[0].Total);
+        Assert.Equal(0, result[0].RoundCount);
+        Assert.Null(result[0].Payment);
+        var paid = result[1];
+        Assert.Equal(3, paid.TableId);
+        Assert.Equal(34, paid.Total);
+        Assert.Equal(2, paid.RoundCount);
+        Assert.Equal(new PaymentDto(4, "Cash", 34, paidAt), paid.Payment);
+        Assert.Equal(new OrderItemDto(7, "Old name", 1, 10, null), paid.Items[0]);
+        Assert.Equal(new OrderItemDto(7, "New name", 2, 12, "hot"), paid.Items[1]);
+        var cancelled = result[2];
+        Assert.Equal(paidAt, cancelled.CancelledAt);
+        Assert.Equal("manager", cancelled.CancelledBy);
+        Assert.Equal("closed", cancelled.CancellationReason);
+        Assert.Equal("Waste", cancelled.CancellationStockDisposition);
+    }
+
+    [Fact]
+    public void OrdersProjectionUsesScalarTicketCountInSinglePostgresQuery()
+    {
+        using var db = new RestaurantDbContext(new DbContextOptionsBuilder<RestaurantDbContext>()
+            .UseNpgsql("Host=localhost;Database=not_used;Username=unused;Password=unused").Options);
+        var sql = RestaurantService.OrdersQuery(db.Orders.AsNoTracking().AsSingleQuery()).ToQueryString();
+        Assert.Contains("count(*)", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SUM(", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FROM \"KitchenTickets\"", sql);
+        Assert.DoesNotContain("JOIN \"KitchenTickets\"", sql);
+        Assert.Contains("JOIN \"OrderItem\"", sql);
+        Assert.DoesNotContain("JOIN \"MenuItems\"", sql);
+    }
+
     [Fact]
     public void RoundsPreserveSnapshotsAndMatchIdempotentRequests()
     {
