@@ -45,6 +45,10 @@ The administrator and manager POS overview highlights queued kitchen tickets, co
 
 Orders can be dine-in or takeaway. Draft items and kitchen notes can be edited before sending; sent orders produce kitchen tickets that progress through queued, preparing and ready before order completion. Reconstructed tickets are flagged: verify the actual kitchen state before acting, as their timestamps reflect order creation. Refresh the kitchen view to see other operators' changes.
 
+Select an occupied table to open its running bill. On a server that exposes `roundCount`, staff can send additional items as separate kitchen rounds and settle the full bill once all rounds are ready. Older servers require completion before payment and cannot add rounds until upgraded. Pending round and payment recovery is kept in tab-scoped session storage, which may be lost when the tab closes; check the bill and kitchen before retrying uncertain operations.
+
+Workspace settings are specific to this browser: auto-send new drafts (off by default), display density, default simulated payment method and automatic receipt preview. Auto-send does not mark food ready; if sending fails after saving, use the existing draft instead of creating another. Receipts are printable at 80 mm through the browser and are explicitly simulated, not tax invoices.
+
 Guests can submit quoted requests for staff review using a takeaway or table-specific guest link. Staff acceptance creates a draft order, not a kitchen ticket; prices, availability and table occupancy are revalidated. Guest status lookup uses an access token held only in page memory, so closing or reloading the page loses lookup access. If submission has an uncertain network outcome, ask staff before trying again: the API has no idempotency or token recovery. Table links expose a table reference rather than a verified table number; guests should confirm it with staff.
 
 The manager reports use an inclusive business-date range of at most 366 days. The API supplies the business timezone and UTC payment window; best-selling rows use the item name and price snapshots recorded at sale.

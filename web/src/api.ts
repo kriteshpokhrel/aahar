@@ -18,6 +18,7 @@ export type Order = {
   id: number
   tableId: number | null
   status: string
+  roundCount?: number
   items: OrderItem[]
   total: number
   createdAt: string
@@ -30,7 +31,7 @@ export type Order = {
 
 export type OrderItem = { menuItemId: number; name: string; quantity: number; unitPrice: number; notes: string | null }
 export type OrderLine = { menuItemId: number; quantity: number; notes: string | null }
-export type KitchenTicket = { id: number; orderId: number; tableId: number | null; status: string; createdAt: string; isReconstructed: boolean; items: OrderItem[] }
+export type KitchenTicket = { id: number; orderId: number; tableId: number | null; status: string; createdAt: string; isReconstructed: boolean; requestId?: string | null; items: OrderItem[] }
 export type User = { username: string; role: string }
 export type StaffRole = 'Admin' | 'Manager' | 'Staff' | 'Kitchen'
 export type PaymentMethod = 'Cash' | 'Card'
@@ -134,6 +135,8 @@ export const api = {
   editOrder: (id: number, items: OrderLine[]) =>
     request<Order>(`/orders/${id}/items`, { method: 'PUT', body: JSON.stringify({ items }) }),
   sendOrder: (id: number) => post(`/orders/${id}/send`),
+  addRound: (id: number, requestId: string, items: OrderLine[]) =>
+    post<{ order: Order; ticket: KitchenTicket }>(`/orders/${id}/rounds`, { requestId, items }),
   completeOrder: (id: number) => post(`/orders/${id}/complete`),
   kitchenTickets: () => request<KitchenTicket[]>('/kitchen/tickets'),
   prepareTicket: (id: number) => post<KitchenTicket>(`/kitchen/tickets/${id}/prepare`),

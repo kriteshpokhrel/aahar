@@ -4,7 +4,7 @@ import { api } from './api'
 import type { Ingredient, KitchenTicket, Order, Table } from './api'
 import { pendingRequestCount, serviceOverview } from './overviewMetrics'
 
-type Destination = 'kitchen' | 'guest-requests' | 'inventory' | 'tables'
+type Destination = 'kitchen' | 'billing' | 'guest-requests' | 'inventory' | 'tables'
 type Result<T> = { value: T | null; error: string | null }
 
 export function ServiceOverview({ orders, tickets, tables, demo, loading, incomplete, refreshWorkspace, navigate }: {
@@ -44,9 +44,9 @@ export function ServiceOverview({ orders, tickets, tables, demo, loading, incomp
         <span className="overview-card-head"><span className="overview-icon"><ChefHat size={17} aria-hidden="true" /></span><span className="overview-card-label">Kitchen queue</span><ArrowRight size={15} aria-hidden="true" /></span>
         <strong>{showValue(summary.queued)}</strong><span>tickets waiting to start</span><small>{workspaceUnknown ? 'Check workspace connection' : `${summary.preparing} preparing · ${summary.ready} ready · ${summary.drafts} drafts`}</small>
       </button>
-      <button type="button" className={`overview-card ${!workspaceUnknown && summary.completed > 0 ? 'needs-attention' : ''}`} onClick={() => navigate('kitchen')}>
+      <button type="button" className={`overview-card ${!workspaceUnknown && summary.completed > 0 ? 'needs-attention' : ''}`} onClick={() => navigate('billing')}>
         <span className="overview-card-head"><span className="overview-icon"><WalletCards size={17} aria-hidden="true" /></span><span className="overview-card-label">Payment</span><ArrowRight size={15} aria-hidden="true" /></span>
-        <strong>{showValue(summary.completed)}</strong><span>completed orders awaiting payment</span><small>Payments are simulated</small>
+        <strong>{showValue(summary.completed)}</strong><span>bills ready for payment</span><small>Payments are simulated</small>
       </button>
       {!demo && <button type="button" className={`overview-card ${pending.value !== null && pending.value > 0 ? 'needs-attention' : ''}`} onClick={() => navigate('guest-requests')}>
         <span className="overview-card-head"><span className="overview-icon"><ClipboardList size={17} aria-hidden="true" /></span><span className="overview-card-label">Guest requests</span><ArrowRight size={15} aria-hidden="true" /></span>

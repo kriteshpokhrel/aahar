@@ -1,4 +1,5 @@
 import type { KitchenTicket, Order, Table } from './api.ts'
+import { billReadiness } from './bill.ts'
 
 export function serviceOverview(tickets: KitchenTicket[], orders: Order[], tables: Table[]) {
   const count = (values: { status: string }[], status: string) => values.filter(item => item.status.toLowerCase() === status).length
@@ -7,7 +8,7 @@ export function serviceOverview(tickets: KitchenTicket[], orders: Order[], table
     preparing: count(tickets, 'preparing'),
     ready: count(tickets, 'ready'),
     drafts: count(orders, 'draft'),
-    completed: count(orders, 'completed'),
+    completed: orders.filter(order => billReadiness(order, tickets)).length,
     availableTables: tables.filter(table => !table.isOccupied).length,
     totalTables: tables.length,
   }

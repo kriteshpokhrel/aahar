@@ -18,8 +18,8 @@ export const demoTables: Table[] = [
 ]
 
 export const demoOrders: Order[] = [
-  { id: 104, tableId: 2, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 1, name: 'Chicken momo', quantity: 2, unitPrice: 320, notes: null }, { menuItemId: 7, name: 'Masala tea', quantity: 2, unitPrice: 120, notes: null }], total: 880, payment: null },
-  { id: 103, tableId: 4, status: 'Sent', createdAt: new Date().toISOString(), items: [{ menuItemId: 5, name: 'Dal bhat set', quantity: 2, unitPrice: 420, notes: null }], total: 840, payment: null },
+  { id: 104, tableId: 2, status: 'Sent', roundCount: 1, createdAt: new Date().toISOString(), items: [{ menuItemId: 1, name: 'Chicken momo', quantity: 2, unitPrice: 320, notes: null }, { menuItemId: 7, name: 'Masala tea', quantity: 2, unitPrice: 120, notes: null }], total: 880, payment: null },
+  { id: 103, tableId: 4, status: 'Sent', roundCount: 1, createdAt: new Date().toISOString(), items: [{ menuItemId: 5, name: 'Dal bhat set', quantity: 2, unitPrice: 420, notes: null }], total: 840, payment: null },
 ]
 export const demoTickets: KitchenTicket[] = demoOrders.map(order => ({
   id: order.id, orderId: order.id, tableId: order.tableId, status: 'Queued',

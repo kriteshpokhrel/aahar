@@ -2,6 +2,31 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { api, ApiError } from '../src/api.ts'
 
+test('round retries use the same request ID and unchanged items', async () => {
+  const calls = []
+  const originalFetch = globalThis.fetch
+  let attempts = 0
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options })
+    if (url === '/api/auth/csrf') return Response.json({ requestToken: 'round-token' })
+    if (url.endsWith('/rounds')) {
+      if (++attempts === 1) return Response.json({ detail: 'Concurrent request' }, { status: 409 })
+      return Response.json({ order: { id: 7 }, ticket: { id: 8 } })
+    }
+    return new Response(null, { status: 204 })
+  }
+  try {
+    const items = [{ menuItemId: 2, quantity: 2, notes: 'No onion' }]
+    const requestId = '1cbd293d-1cd6-4453-8942-0ae187f4ea49'
+    await assert.rejects(api.addRound(7, requestId, items), error => error instanceof ApiError && error.status === 409)
+    await api.addRound(7, requestId, items)
+    const rounds = calls.filter(call => call.url === '/api/orders/7/rounds')
+    assert.equal(rounds.length, 2)
+    assert.deepEqual(rounds.map(call => JSON.parse(call.options.body)), [{ requestId, items }, { requestId, items }])
+    assert.ok(rounds.every(call => call.options.headers.get('X-CSRF-TOKEN') === 'round-token'))
+  } finally { await api.logout(); globalThis.fetch = originalFetch }
+})
+
 test('password change uses CSRF and obtains a fresh token before signing in again', async () => {
   const calls = []
   const originalFetch = globalThis.fetch
