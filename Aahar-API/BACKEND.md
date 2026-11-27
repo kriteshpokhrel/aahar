@@ -59,6 +59,36 @@ The API listens at `https://localhost:7041`. Use an HTTPS frontend bound to loca
 
 `Business:TimeZone` in `appsettings.json` explicitly defaults to `Asia/Kathmandu` for a Nepal-local restaurant. Set `Business__TimeZone` to the restaurant's system time-zone ID before starting the API if it operates elsewhere. A missing or invalid ID prevents startup. Reporting uses this configured zone, not the server's implicit local zone; changing it can change which business day includes a historical payment. Keep the operating system's time-zone data current.
 
+## Shared restaurant settings
+
+Restaurant identity is installation-wide, not a browser preference. The public
+profile contains only the business details intended for guests: name, tagline,
+address, phone, email, website and receipt footer. Do not enter private account
+details. Admin saves require CSRF and the `version` returned by the last read;
+a stale version returns 409 without overwriting the file. The name is required
+on save. Field limits are 100/150/300/50/150/250/300 characters respectively;
+websites must use HTTP(S), without embedded credentials. The request limit is
+16 KiB.
+
+No database migration is needed for this profile. It is a separate JSON file,
+defaulting to the OS LocalApplicationData directory under
+`Aahar/restaurant-profile.json`. Override `RestaurantProfile__FilePath` with an
+absolute `.json` path outside application content/executable directories.
+Choose a distinct file for every installation/database. The service uses atomic
+replacement and version checks within one API process; **run only one API writer
+per profile file**. New files are owner-readable/writable on Unix; secure the
+directory and apply equivalent Windows ACLs. Symbolic-link profile files are
+rejected, and parent directories must remain trusted.
+
+A missing file is explicitly unconfigured (`version:null`, blank fields).
+Malformed, oversized or inaccessible storage produces an error, not an empty
+profile or automatic replacement. Stop the API and restore a valid approved
+copy before retrying; preserve the damaged file for investigation. Back up this
+file separately with the matching database and menu images. Reprinted receipts
+use the current profile; business identity is not historically snapshotted.
+The main source build still requires the running-rounds migrations even though
+this independent profile feature does not.
+
 ## HTTP contract
 
 JSON is camelCase. Successful creation and updates return 200 unless stated otherwise. Errors are generally Problem Details with 400 for invalid operations or CSRF, 409 for uniqueness/serialization conflicts, 401/403 for authentication/authorization, and 429 for login throttling. Retry a 409 only after refreshing state.
@@ -69,6 +99,8 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 
 | Endpoint | Request / response | Access |
 | --- | --- | --- |
+| `GET /api/restaurant-profile` | `{name,tagline,address,phone,email,website,receiptFooter,version}`; blank fields and `version:null` before configuration | Anonymous |
+| `PUT /api/restaurant-profile` | Same shape, including the last-read `version`; returns saved profile with a new version | Admin, CSRF protected |
 | `GET /api/guest/menu` | Available menu items | Anonymous |
 | `POST /api/guest/requests` | `{tableId:null,items:[{menuItemId,quantity,quotedUnitPrice,notes}]}`; returns `{id,status,accessToken}` | Anonymous, CSRF protected |
 | `GET /api/guest/requests/{id}` | `X-Guest-Request-Token` header; returns `{id,status,orderId}` | Anonymous, token required |

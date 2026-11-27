@@ -20,6 +20,13 @@ builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPasswordChangeService, PasswordChangeService>();
+builder.Services.AddSingleton<IRestaurantProfileService>(sp =>
+{
+    var environment = sp.GetRequiredService<IWebHostEnvironment>();
+    var path = sp.GetRequiredService<IConfiguration>()["RestaurantProfile:FilePath"] ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aahar", "restaurant-profile.json");
+    return new RestaurantProfileStore(path, environment.ContentRootPath, AppContext.BaseDirectory);
+});
 builder.Services.AddSingleton(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -200,6 +207,10 @@ auth.MapPost("/change-password", async (ChangePasswordRequest request, HttpConte
 }).RequireAuthorization().RequireRateLimiting("password-change");
 auth.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
+app.MapGet("/api/restaurant-profile", (IRestaurantProfileService s, CancellationToken ct) => s.ReadAsync(ct));
+app.MapPut("/api/restaurant-profile", (RestaurantProfile profile, IRestaurantProfileService s, CancellationToken ct) => s.SaveAsync(profile, ct))
+    .RequireAuthorization(p => p.RequireRole("Admin"))
+    .WithMetadata(new RequestBodyLimit(16 * 1024));
 app.MapGet("/api/guest/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(true, ct));
 app.MapGet("/api/menu/{id:int}/image", async (int id, HttpContext ctx, IMenuImageService s, CancellationToken ct) =>
 {

@@ -23,6 +23,15 @@ Backups are not automated by this application. Establish a schedule, retention, 
 
 Menu images are separate files, not part of a database dump. Stop image and database writers and back up the configured `MenuImages__Directory` (or its documented default) with the matching database backup. Retain the pairing and protect filesystem access. Restore the matching image copy into an approved dedicated directory for the restored database before promoting it; the filesystem and database have no shared transaction or automatic reconciliation. Never point different databases at the same image directory.
 
+The restaurant profile is also external to PostgreSQL. Include the configured
+`RestaurantProfile__FilePath` (or its default) in that installation's backup,
+with restricted filesystem access. Stop its single API writer before copying
+or restoring the file; never share it across installations. Preserve a damaged
+file before restoring an approved valid copy, and verify the public profile
+and Admin settings afterward. Missing storage is unconfigured; unreadable or
+malformed storage fails explicitly. Restoring a profile changes what current
+menus and reprinted receipts display, not historical prices or payment records.
+
 After authorization, and only after independently verifying the source connection and the intended new output path, an operator can use PostgreSQL's custom archive format:
 
 ```bash

@@ -10,6 +10,15 @@ Review the PostgreSQL server's `pg_hba.conf` and role permissions before storing
 
 Menu images are stored outside application paths, with names generated from numeric menu IDs. Only Admin/Manager can replace or remove them; anonymous retrieval is limited to available items. Input is size- and dimension-limited, decoded and normalized to PNG rather than serving uploaded bytes. The local image directory and its parent paths must remain protected from untrusted changes, including symlinks. Use a separate image directory per database.
 
+Restaurant profiles are public business metadata, not a place for credentials
+or private contact information. Saves require Admin authorization, CSRF and a
+matching revision. Input sizes, field lengths, control characters, email syntax
+and HTTP(S) website schemes are validated. Text is rendered as text, not HTML.
+The external JSON file is owner-readable/writable on Unix; protect its parent
+directories and configure equivalent Windows ACLs. Filesystem administrators
+can bypass application authorization. Run one API writer per file; there is no
+cross-process edit lock, historical identity snapshot or profile-edit audit log.
+
 ## Authentication and requests
 
 Staff passwords use ASP.NET Core Identity's password hasher; the bootstrap administrator requires a 12–256 character password, and bootstrap refuses to run when any user exists. The `__Host-aahar-auth` cookie is HttpOnly, Secure, SameSite=Strict, path `/`, with an eight-hour expiration and no sliding renewal. A cookie contains the authenticated name and role: there is no server-side session store, password reset, account disablement, role refresh, or individual session revocation. Signing out clears the browser cookie but does not invalidate a previously copied cookie. Treat a stolen cookie as valid until expiry unless its protecting keys are made unavailable using a separately planned operational response.

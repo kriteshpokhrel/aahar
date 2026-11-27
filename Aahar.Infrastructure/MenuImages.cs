@@ -13,25 +13,9 @@ public sealed class MenuImageStore
     public MenuImageStore(string path, string contentRoot, string executableRoot)
     {
         if (!Path.IsPathFullyQualified(path)) throw new InvalidOperationException("Menu image directory must be an absolute path.");
-        root = ResolveDirectory(path);
-        if (IsInside(root, ResolveDirectory(contentRoot)) || IsInside(root, ResolveDirectory(executableRoot)))
+        root = LocalStoragePath.ResolveDirectory(path);
+        if (LocalStoragePath.IsInside(root, LocalStoragePath.ResolveDirectory(contentRoot)) || LocalStoragePath.IsInside(root, LocalStoragePath.ResolveDirectory(executableRoot)))
             throw new InvalidOperationException("Menu image directory must be outside application content and executable directories.");
-    }
-
-    private static string ResolveDirectory(string path)
-    {
-        var full = Path.GetFullPath(path);
-        var parent = Path.GetDirectoryName(full);
-        if (parent is null) return full;
-        var candidate = Path.Combine(ResolveDirectory(parent), Path.GetFileName(full));
-        try { return new DirectoryInfo(candidate).ResolveLinkTarget(true)?.FullName ?? candidate; }
-        catch (DirectoryNotFoundException) { return candidate; }
-    }
-
-    private static bool IsInside(string path, string parent)
-    {
-        var relative = Path.GetRelativePath(Path.GetFullPath(parent), path);
-        return relative == "." || (relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) && !Path.IsPathRooted(relative));
     }
 
     private string ImagePath(int id)
