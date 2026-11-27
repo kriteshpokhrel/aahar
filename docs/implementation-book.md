@@ -57,6 +57,16 @@ Separate local `aahar_local` and `aahar_test` databases were created with the
 user's permission. Fictional menu, table and stock data was seeded only into
 the new application database.
 
+The redesigned frontend includes grouped navigation, account preferences,
+colored table states, a menu-first guest view, full-bill review and 80 mm
+receipt printing. Responsive guest views were exercised using the live menu;
+sample service and mocked legacy-API checks covered layout, capability gating
+and saved-draft auto-send failure. A long receipt produced an isolated,
+multi-page 80 mm PDF. These checks do not establish full live staff end-to-end
+coverage, physical printer compatibility or accessibility compliance.
+Multi-round backend source and its offline-reviewed migrations are integrated,
+but the local schema upgrade and PostgreSQL round/race tests remain unexecuted.
+
 ## 2. Scope and measurable reference coverage
 
 The inventory below decomposes the five feature-page descriptions into 25

@@ -8,8 +8,17 @@ export function Receipt({ order, table, close }: { order: Order; table: Table | 
   const closeButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const root = document.getElementById('root')
+    const previousInert = root?.inert ?? false
+    const previousOverflow = document.body.style.overflow
+    if (root) root.inert = true
+    document.body.style.overflow = 'hidden'
     closeButton.current?.focus()
-    return () => previous?.focus()
+    return () => {
+      if (root) root.inert = previousInert
+      document.body.style.overflow = previousOverflow
+      previous?.focus()
+    }
   }, [])
   if (!order.payment) return null
   const payment = order.payment
@@ -25,7 +34,7 @@ export function Receipt({ order, table, close }: { order: Order; table: Table | 
   }}>
     <section className="receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
       <div className="receipt-dialog-head"><div><span className="eyebrow">PAYMENT RECORD</span><h2 id="receipt-title">Simulated receipt</h2></div><button ref={closeButton} type="button" className="button secondary small" onClick={close}>Close</button></div>
-      <div className="print-receipt">
+      <div className="print-receipt" tabIndex={0} aria-label="Receipt details">
         <header><strong>aahar.</strong><p>SIMULATED · NOT A TAX INVOICE</p></header>
         <div className="receipt-meta"><span>Order #{order.id}</span><span>Payment #{payment.id}</span><span>{order.tableId === null ? 'Takeaway' : table ? `Table ${table.number}` : `Table #${order.tableId}`}</span><span>{new Date(payment.paidAt).toLocaleString()}</span></div>
         <table><thead><tr><th>Item / quantity</th><th>Unit</th><th>Amount</th></tr></thead><tbody>{order.items.map((item, index) => <tr key={`${item.menuItemId}-${index}`}><td>{item.name}<br /><span>Qty {item.quantity}</span></td><td>{money(item.unitPrice)}</td><td>{money(item.quantity * item.unitPrice)}</td></tr>)}</tbody></table>

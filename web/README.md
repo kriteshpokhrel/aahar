@@ -41,13 +41,27 @@ Signed-in users can change their own password. A successful change signs out the
 
 The POS, tables, kitchen, menu catalogue, inventory, sales overview and guest menu use the API. Table availability comes from the server; order conflicts are reported rather than silently retried. Staff can cancel draft orders; managers and administrators can also cancel submitted orders and must choose whether to return stock or mark it as waste. Menu and table creation, menu edits, inventory adjustments and sales are available to managers and administrators.
 
-The administrator and manager POS overview highlights queued kitchen tickets, completed orders awaiting simulated payment, pending guest requests, low stock and available tables. It links to the relevant workflows. Counts are snapshots, not live notifications; use refresh for changes from other staff. A full guest request page is shown as 20+ rather than an exact total. Unavailable data is marked instead of shown as zero. Sample mode displays example service counts without connecting to inventory or guest requests.
+The administrator and manager POS overview highlights queued kitchen tickets, bills ready for simulated payment, pending guest requests, low stock and available tables. It links to the relevant workflows. Counts are snapshots, not live notifications; use refresh for changes from other staff. A full guest request page is shown as 20+ rather than an exact total. Unavailable data is marked instead of shown as zero. Sample mode displays example service counts without connecting to inventory or guest requests.
 
 Orders can be dine-in or takeaway. Draft items and kitchen notes can be edited before sending; sent orders produce kitchen tickets that progress through queued, preparing and ready before order completion. Reconstructed tickets are flagged: verify the actual kitchen state before acting, as their timestamps reflect order creation. Refresh the kitchen view to see other operators' changes.
 
 Select an occupied table to open its running bill. On a server that exposes `roundCount`, staff can send additional items as separate kitchen rounds and settle the full bill once all rounds are ready. Older servers require completion before payment and cannot add rounds until upgraded. Pending round and payment recovery is kept in tab-scoped session storage, which may be lost when the tab closes; check the bill and kitchen before retrying uncertain operations.
 
 Workspace settings are specific to this browser: auto-send new drafts (off by default), display density, default simulated payment method and automatic receipt preview. Auto-send does not mark food ready; if sending fails after saving, use the existing draft instead of creating another. Receipts are printable at 80 mm through the browser and are explicitly simulated, not tax invoices.
+
+Service and management navigation are grouped separately; password change,
+workspace settings and sign-out are in the account area. Green/red table
+surfaces retain explicit Available/Occupied labels. The guest menu prioritizes
+search, categories and items, with a sticky selection summary on desktop and a
+cart shortcut on small screens.
+
+For an older server, progress the ticket through Prepare and Ready in Kitchen,
+then have an authorized manager or kitchen user mark the order complete in
+Billing. Open its bill, review the full balance and record one simulated
+payment. Paid orders retain **View receipt**, with **Print / Save as PDF**.
+Receipt details scroll independently so Close and Print remain accessible.
+The print document excludes the workspace; printer paper settings and actual
+thermal hardware still need device-specific verification.
 
 Guests can submit quoted requests for staff review using a takeaway or table-specific guest link. Staff acceptance creates a draft order, not a kitchen ticket; prices, availability and table occupancy are revalidated. Guest status lookup uses an access token held only in page memory, so closing or reloading the page loses lookup access. If submission has an uncertain network outcome, ask staff before trying again: the API has no idempotency or token recovery. Table links expose a table reference rather than a verified table number; guests should confirm it with staff.
 

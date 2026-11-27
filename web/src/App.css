@@ -36,4 +36,7 @@
 @media(max-width:1200px){.pos-layout{grid-template-columns:minmax(0,1fr) 330px}}
 @media(max-width:850px){.sidebar .brand{margin-bottom:25px}.sidebar-bottom .nav-item{font-size:0}.pos-layout{grid-template-columns:1fr}.guest-layout{grid-template-columns:1fr}.guest-cart{position:static;max-height:none}.guest-mobile-cart{display:flex;position:fixed;bottom:12px;left:16px;right:16px;z-index:4;justify-content:center;box-shadow:0 3px 12px #0003}.guest-content{padding-bottom:100px}}
 @media(max-width:600px){.content{padding:20px 16px 90px}.service-overview{padding:12px}.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.guest-page>header{padding:15px 16px}.guest-content{padding:18px 16px 100px}.settings-row{align-items:flex-start}.table-card{min-height:130px}.button.small{min-height:38px}}
+.ticket-items>div>span:first-child{flex:1;min-width:0;overflow-wrap:anywhere}.ticket-items>div>span:last-child{flex-shrink:0;white-space:nowrap;font-variant-numeric:tabular-nums}
+.receipt-dialog{display:flex;flex-direction:column;overflow:hidden}.receipt-dialog-head,.receipt-dialog-actions{flex-shrink:0}.print-receipt{min-height:0;overflow:auto;flex:1 1 auto}.receipt-dialog-actions{padding-top:12px;border-top:1px solid var(--border)}
+@media print{body{overflow:visible!important}.receipt-dialog{display:block;overflow:visible}.print-receipt{overflow:visible}}
 @media(max-width:350px){.overview-grid{grid-template-columns:1fr}}
