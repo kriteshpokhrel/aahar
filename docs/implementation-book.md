@@ -273,6 +273,24 @@ the receipt, wrap long item names and exclude navigation and controls. Do not
 invent restaurant contact details, tax IDs or tax rates. Every receipt remains
 marked **SIMULATED / NOT A TAX INVOICE**.
 
+Navigation should group service actions separately from management. Password
+change, sign-out and workspace preferences belong under the account/profile
+area, not beside the primary service screens. Available tables use a green
+surface and occupied tables a red surface, both with explicit text and a
+distinct focus/selected state; color is not the sole status cue. The guest
+screen is menu-first, without a large decorative hero above the search,
+categories and items.
+
+Browser-specific preferences include compact/comfortable density, the default
+simulated checkout method, opening the receipt view after settlement, and
+optional automatic kitchen sending for newly saved bills. They are device
+preferences, not restaurant-wide policies, and must not contain credentials.
+Auto-send is not auto-prepare: the kitchen still confirms preparation and
+readiness. On the pre-rounds API, saving a draft and sending it are separate
+server operations. If sending fails after saving, show the existing bill ID
+and its unsent state so staff retry that bill rather than create a duplicate.
+Added rounds use their own atomic append-and-send operation.
+
 **Rollout constraint:** multi-round persistence requires an additive schema
 migration. That migration has not been approved for the existing local
 databases. Keep the live pre-rounds API running, keep the polished frontend
