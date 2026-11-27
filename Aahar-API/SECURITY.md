@@ -6,6 +6,8 @@ The intended deployment is one restaurant on one computer, with a localhost-boun
 
 Protect the operating-system account, PostgreSQL access and backups, HTTPS private key, and ASP.NET Core data-protection keys. Someone who controls the host, application, browser session, database, or data-protection keys is outside the protections provided here. Default development key storage may not encrypt keys at rest. This design does not provide production hardening, isolation between local OS users, or protection against a compromised frontend or cross-site scripting.
 
+Menu images are stored outside application paths, with names generated from numeric menu IDs. Only Admin/Manager can replace or remove them; anonymous retrieval is limited to available items. Input is size- and dimension-limited, decoded and normalized to PNG rather than serving uploaded bytes. The local image directory and its parent paths must remain protected from untrusted changes, including symlinks. Use a separate image directory per database.
+
 ## Authentication and requests
 
 Staff passwords use ASP.NET Core Identity's password hasher; the bootstrap administrator requires a 12–256 character password, and bootstrap refuses to run when any user exists. The `__Host-aahar-auth` cookie is HttpOnly, Secure, SameSite=Strict, path `/`, with an eight-hour expiration and no sliding renewal. A cookie contains the authenticated name and role: there is no server-side session store, password reset, account disablement, role refresh, or individual session revocation. Signing out clears the browser cookie but does not invalidate a previously copied cookie. Treat a stolen cookie as valid until expiry unless its protecting keys are made unavailable using a separately planned operational response.

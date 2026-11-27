@@ -75,6 +75,9 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 | `POST /api/guest-requests/{id}/reject` | `{reason}`; returns request | Admin, Manager, Staff |
 | `GET /api/menu` | All menu items: `{id,name,description,category,price,isAvailable}` | Authenticated |
 | `POST /api/menu`, `PUT /api/menu/{id}` | `{name,description,category,price,isAvailable}`; returns item | Admin, Manager |
+| `GET /api/menu/{id}/image` | PNG image, `no-store`; 404 if missing or hidden | Anonymous for available items; authenticated for all items |
+| `PUT /api/menu/{id}/image` | Raw `image/png` or `image/jpeg` body, at most 2 MiB; 204 | Admin, Manager |
+| `DELETE /api/menu/{id}/image` | 204, including when image is absent; 404 if item is absent | Admin, Manager |
 | `GET /api/tables` | `{id,number,capacity,isOccupied}[]` | Authenticated |
 | `POST /api/tables` | `{number,capacity}`; returns table | Admin, Manager |
 | `GET /api/ingredients` | `{id,name,unit,stock,lowStockThreshold,isLowStock}[]` | Admin, Manager |
@@ -107,6 +110,10 @@ All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestTok
 | `GET /api/reports/best-selling?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD&limit=20` | `{fromDate,toDate,timeZone,fromUtc,toUtcExclusive,items:[{menuItemId,name,unitPrice,quantity,revenue}]}` | Admin, Manager |
 
 An order is `{id,tableId,status,createdAt,items:[{menuItemId,name,quantity,unitPrice,notes}],total,payment,cancelledAt,cancelledBy,cancellationReason,cancellationStockDisposition}`; `tableId` is null for takeaway, `payment` is null or `{id,method,amount,paidAt}`, and cancellation fields are null until cancellation. Notes are optional strings of at most 300 characters. Prices and names are captured when a line is first added; editing a retained line preserves its snapshot, and a removed and re-added line uses the current menu values. Unavailable items can be retained or reduced, but cannot be added or increased. Editing is restricted to Draft orders. A table is occupied while its dine-in order is Draft, Sent, or Completed; a concurrent second active order for the same table is rejected with 409. Payment or cancellation releases the table. Takeaway orders do not occupy a table.
+
+Image uploads require the normal CSRF header, a matching actual PNG or JPEG format, successful full decoding, dimensions no greater than 2048 on either axis and no more than 4 million pixels. Unsupported content types return 415, invalid images 400, oversized bodies 413, and unknown items 404. Uploads are re-encoded as PNG without original metadata; animated images use their first frame and EXIF orientation is not applied. The URL is stable; clients should handle a missing image and refresh it after replacement. Menu DTOs are unchanged.
+
+By default, images are kept under the current OS user's local application data directory in `Aahar/menu-images`, outside application content and executable directories. Override with an absolute `MenuImages__Directory` path outside those directories. Restrict its permissions to the application account, prevent untrusted users from changing its contents or symlinks, and use a separate directory for each database/environment: files are indexed by menu ID, not database identity. Writes replace an image atomically, but image files and PostgreSQL are not a single transaction. Include the directory in coordinated backups; see [operations](OPERATIONS.md).
 
 A ticket is `{id,orderId,tableId,status,createdAt,isReconstructed,items:[{menuItemId,name,quantity,unitPrice,notes}]}`. Its items are immutable snapshots made when the order is sent; sending, stock deduction and ticket creation are one transaction. Kitchen transitions must be in order: Queued, Preparing, Ready. Completing an order requires Ready. Cancelling an order also marks its ticket Cancelled. Order revisions detect concurrent edits and kitchen transitions; refresh after a 409.
 

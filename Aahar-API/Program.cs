@@ -19,6 +19,15 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var environment = sp.GetRequiredService<IWebHostEnvironment>();
+    var path = config["MenuImages:Directory"] ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aahar", "menu-images");
+    return new MenuImageStore(path, environment.ContentRootPath, AppContext.BaseDirectory);
+});
+builder.Services.AddScoped<IMenuImageService, MenuImageService>();
 var businessZoneId = builder.Configuration["Business:TimeZone"];
 if (string.IsNullOrWhiteSpace(businessZoneId)) throw new InvalidOperationException("Set Business:TimeZone to the restaurant's time zone.");
 try
@@ -184,6 +193,12 @@ auth.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new UserDto(user.Identit
 auth.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
 app.MapGet("/api/guest/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(true, ct));
+app.MapGet("/api/menu/{id:int}/image", async (int id, HttpContext ctx, IMenuImageService s, CancellationToken ct) =>
+{
+    var bytes = await s.GetAsync(id, ctx.User.Identity?.IsAuthenticated == true, ct);
+    ctx.Response.Headers.XContentTypeOptions = "nosniff";
+    return bytes is null ? Results.NotFound() : Results.File(bytes, "image/png");
+});
 app.MapPost("/api/guest/requests", (SubmitGuestRequest r, IGuestRequestService s, CancellationToken ct) => s.SubmitAsync(r, ct))
     .RequireRateLimiting("guest-submit").WithMetadata(new RequestBodyLimit(65536));
 app.MapGet("/api/guest/requests/{id:int}", async (int id, HttpContext ctx, IGuestRequestService s, CancellationToken ct) =>
@@ -202,6 +217,14 @@ api.MapPost("/users", (CreateUserRequest r, IRestaurantService s, CancellationTo
 api.MapGet("/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(false, ct));
 api.MapPost("/menu", (MenuRequest r, IRestaurantService s, CancellationToken ct) => s.SaveMenuAsync(null, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapPut("/menu/{id:int}", (int id, MenuRequest r, IRestaurantService s, CancellationToken ct) => s.SaveMenuAsync(id, r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
+api.MapPut("/menu/{id:int}/image", async (int id, HttpContext ctx, IMenuImageService s, CancellationToken ct) =>
+{
+    var type = ctx.Request.ContentType?.Trim().ToLowerInvariant();
+    if (type is not ("image/png" or "image/jpeg")) return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+    return await s.PutAsync(id, type, ctx.Request.Body, ct) ? Results.NoContent() : Results.NotFound();
+}).RequireAuthorization(p => p.RequireRole("Admin", "Manager")).WithMetadata(new RequestBodyLimit(MenuImageStore.MaxBytes));
+api.MapDelete("/menu/{id:int}/image", async (int id, IMenuImageService s, CancellationToken ct) =>
+    await s.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound()).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/tables", (IRestaurantService s, CancellationToken ct) => s.TablesAsync(ct));
 api.MapPost("/tables", (TableRequest r, IRestaurantService s, CancellationToken ct) => s.CreateTableAsync(r, ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));
 api.MapGet("/ingredients", (IRestaurantService s, CancellationToken ct) => s.IngredientsAsync(ct)).RequireAuthorization(p => p.RequireRole("Admin", "Manager"));

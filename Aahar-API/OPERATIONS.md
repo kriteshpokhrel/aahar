@@ -19,6 +19,8 @@ The initial PostgreSQL migration is intended for a dedicated empty database, not
 
 Backups are not automated by this application. Establish a schedule, retention, encryption, off-machine storage, access controls, and an owner; database dumps contain sensitive operational data and password hashes. Choose PostgreSQL client tools compatible with the source server and the intended restore server; check PostgreSQL's version compatibility guidance. A database-only `pg_dump` does not back up cluster-wide roles, external data-protection keys, certificates, or application configuration. Preserve those separately under restricted access and record the application and database versions and backup time. Decide how much data loss is acceptable between backups.
 
+Menu images are separate files, not part of a database dump. Stop image and database writers and back up the configured `MenuImages__Directory` (or its documented default) with the matching database backup. Retain the pairing and protect filesystem access. Restore the matching image copy into an approved dedicated directory for the restored database before promoting it; the filesystem and database have no shared transaction or automatic reconciliation. Never point different databases at the same image directory.
+
 After authorization, and only after independently verifying the source connection and the intended new output path, an operator can use PostgreSQL's custom archive format:
 
 ```bash

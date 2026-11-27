@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="SkiaSharp" Version="4.158.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.158.0" />
     <ProjectReference Include="..\Aahar.Application\Aahar.Application.csproj" />
     <ProjectReference Include="..\Aahar.Domain\Aahar.Domain.csproj" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
