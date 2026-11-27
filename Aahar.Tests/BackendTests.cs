@@ -11,11 +11,30 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Aahar.Tests;
 
 public class BackendTests
 {
+    [Theory]
+    [InlineData("23505", true)]
+    [InlineData("40001", true)]
+    [InlineData("40P01", true)]
+    [InlineData("23503", false)]
+    [InlineData("08006", false)]
+    public void DatabaseConflictClassificationHandlesExecutionStrategyWrappers(string sqlState, bool expected)
+    {
+        var postgres = new PostgresException("Synthetic database error", "ERROR", "ERROR", sqlState);
+        var update = new DbUpdateException("Save failed", postgres);
+        var wrapped = new InvalidOperationException("Transient failure", update);
+        Assert.Equal(expected, DatabaseConflicts.IsConflict(postgres));
+        Assert.Equal(expected, DatabaseConflicts.IsConflict(update));
+        Assert.Equal(expected, DatabaseConflicts.IsConflict(wrapped));
+        Assert.True(DatabaseConflicts.IsConflict(new DbUpdateConcurrencyException()));
+        Assert.False(DatabaseConflicts.IsConflict(new InvalidOperationException("Unrelated failure")));
+    }
+
     [Fact]
     public void StockAndTransitionsRejectInvalidOperations()
     {

@@ -16,6 +16,10 @@ database. It applies migrations there and enables the existing PostgreSQL
 workflow and round/concurrency tests. It never connects to an operator's local
 database or changes the unapproved local schema.
 
+Database test classes share an xUnit collection so unrelated fixture setup does
+not race under PostgreSQL's serializable isolation. The deliberate concurrent
+operations inside the round tests still run concurrently.
+
 Passwordless `trust` authentication is limited to this disposable CI service,
 published on the runner's loopback interface. It is not a deployment
 configuration and must not be copied to a real restaurant database. No database

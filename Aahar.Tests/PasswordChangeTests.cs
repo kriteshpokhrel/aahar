@@ -12,6 +12,34 @@ namespace Aahar.Tests;
 
 public sealed class PasswordChangeTests
 {
+    [Theory]
+    [InlineData("40001", HttpStatusCode.Conflict)]
+    [InlineData("08006", HttpStatusCode.InternalServerError)]
+    public async Task WrappedDatabaseErrorsReturnConflictOnlyForRecognizedSqlStates(string sqlState, HttpStatusCode expected)
+    {
+        var postgres = new Npgsql.PostgresException("Synthetic storage detail", "ERROR", "ERROR", sqlState);
+        var service = new FakePasswordChangeService(new string('a', 12))
+        {
+            Failure = new InvalidOperationException("Transient failure",
+                new DbUpdateException("Save failed", postgres))
+        };
+        await using var factory = new TestFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IPasswordChangeService>();
+            services.AddSingleton<IPasswordChangeService>(service);
+        }));
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken);
+        (await client.PostAsJsonAsync("/api/auth/login", new LoginRequest("staff", "password"))).EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", (await client.GetFromJsonAsync<Csrf>("/api/auth/csrf"))!.RequestToken);
+        var response = await client.PostAsJsonAsync("/api/auth/change-password",
+            new ChangePasswordRequest { CurrentPassword = new string('a', 12), NewPassword = new string('b', 12) });
+        Assert.Equal(expected, response.StatusCode);
+        Assert.DoesNotContain("Synthetic storage detail", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/auth/me")).StatusCode);
+    }
+
     [Fact]
     public void VerifiesCurrentPasswordAndHashesPolicyCompliantNewPassword()
     {
@@ -109,10 +137,12 @@ public sealed class PasswordChangeTests
         public readonly PasswordHasher<User> Hasher = new();
         public string? Actor { get; private set; }
         public bool Conflict { get; init; }
+        public Exception? Failure { get; init; }
         public FakePasswordChangeService(string password) => User.PasswordHash = Hasher.HashPassword(User, password);
         public Task ChangeAsync(string username, ChangePasswordRequest request, CancellationToken ct)
         {
             Actor = username;
+            if (Failure is not null) throw Failure;
             if (Conflict) throw new ConflictException("Password changed concurrently; sign in again and retry.");
             User.PasswordHash = PasswordChange.CreateHash(User, request, Hasher);
             return Task.CompletedTask;
