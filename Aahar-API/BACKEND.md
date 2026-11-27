@@ -65,6 +65,8 @@ JSON is camelCase. Successful creation and updates return 200 unless stated othe
 
 All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestToken}` and sets an HttpOnly, Secure, SameSite=Strict antiforgery cookie. Send that token as `X-CSRF-TOKEN` on every POST, PUT, PATCH, and DELETE, including login. `POST /api/auth/login` takes `{username,password}` and returns `{username,role}` with an HttpOnly, Secure, SameSite=Strict auth cookie. Get a fresh CSRF token after login. `GET /api/auth/me` returns the same user shape; `POST /api/auth/logout` returns 204 and clears the auth cookie. Fetch a fresh token before another login. Unauthenticated requests do not redirect. Roles are `Admin`, `Manager`, `Staff`, and `Kitchen`; an Admin can `POST /api/users` with `{username,password,role}`.
 
+`POST /api/auth/change-password` accepts `{currentPassword,newPassword}` for any authenticated role and requires CSRF. The new password must be 12–256 characters. An incorrect current password or invalid new password returns 400, an unauthenticated request 401, and a concurrent password change 409. Five attempts per minute are allowed per server process, shared by users; excess attempts return 429. Success returns 204 and clears the current browser's auth cookie; obtain a fresh CSRF token before signing in again. Other or copied stateless cookies are not revoked by a password change and remain valid until expiry.
+
 | Endpoint | Request / response | Access |
 | --- | --- | --- |
 | `GET /api/guest/menu` | Available menu items | Anonymous |
@@ -145,4 +147,4 @@ kitchen, simulated payment, guest requests, authorization and selected stock
 and table races. It does not replace full end-to-end, migration-upgrade or
 recovery verification.
 
-This is an intentionally incomplete portfolio foundation: no supplier deletion, purchase receipt correction/returns or cost-based valuation, guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.
+This is an intentionally incomplete portfolio foundation: no supplier deletion, purchase receipt correction/returns or cost-based valuation, guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation and self-service password change, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.

@@ -19,6 +19,7 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IPasswordChangeService, PasswordChangeService>();
 builder.Services.AddSingleton(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -67,6 +68,7 @@ builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddFixedWindowLimiter("login", x => { x.PermitLimit = 5; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
+    o.AddFixedWindowLimiter("password-change", x => { x.PermitLimit = 5; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("guest-submit", x => { x.PermitLimit = 5; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("guest-status", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
 });
@@ -190,6 +192,12 @@ auth.MapPost("/login", async (LoginRequest request, IRestaurantService service, 
     return Results.Ok(user);
 }).RequireRateLimiting("login");
 auth.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new UserDto(user.Identity!.Name!, user.FindFirstValue(ClaimTypes.Role)!))).RequireAuthorization();
+auth.MapPost("/change-password", async (ChangePasswordRequest request, HttpContext ctx, IPasswordChangeService service, CancellationToken ct) =>
+{
+    await service.ChangeAsync(ctx.User.Identity!.Name!, request, ct);
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.NoContent();
+}).RequireAuthorization().RequireRateLimiting("password-change");
 auth.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
 
 app.MapGet("/api/guest/menu", (IRestaurantService s, CancellationToken ct) => s.MenuAsync(true, ct));
