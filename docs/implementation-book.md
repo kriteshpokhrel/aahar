@@ -236,6 +236,50 @@ never the sole accessible label. Respect reduced-motion preferences.
   licensed/local images, categories, price and availability; cart review and
   an unmistakable pending/accepted/rejected status.
 
+### Running bills and counter checkout
+
+The next service slice targets a normal restaurant visit: open one bill for
+the table, add food or drinks throughout service, and pay the full balance at
+the billing counter. "Clear the bill" means settle that bill and release the
+table, not delete its items or erase its payment history. Split bills,
+cross-table merging, discounts, refunds and partial payments are separate work.
+
+Reference research used the public [Square restaurant POS overview](https://squareup.com/us/en/point-of-sale/restaurants),
+[Square check management guide](https://squareup.com/help/us/en/article/8166-comp-void-and-reassign-checks-with-square-for-restaurants)
+and [RestroX feature page](https://www.restrox.com/np/features). These describe
+open checks, floor/table management, kitchen tickets and connected billing;
+they do not establish that Aahar implements those products' full capabilities.
+Adopt the workflow principles, not their branding, screenshots or assets.
+
+| Observed pattern | Aahar improvement and acceptance gate |
+|---|---|
+| Open checks persist throughout a visit | Occupied table opens its running bill, rather than blocking the operator with "select another table" |
+| Table, order and billing stay connected | Table workspace shows bill balance and service state, with an explicit counter-checkout action |
+| New kitchen work is distinct from prepared items | Each added round creates a new immutable ticket; earlier tickets and price snapshots remain unchanged |
+| Counter settlement closes a check | One confirmation pays the entire bill only when all kitchen rounds are ready; one payment releases the table |
+| Receipts are practical operational documents | 80 mm receipt shows order/payment reference, date, table or takeaway, quantities, unit/line prices, total and simulated method |
+| Staff screens favor speed and clarity | Compact navigation, labeled states, aligned money, explicit next actions, accessible focus and honest loading/error states |
+
+An added round must atomically append price-snapshotted lines, create its
+kitchen ticket and deduct only that round's stock. A retained request ID and
+identical payload permit a safe retry after an uncertain response. An altered
+payload must not reuse the ID. Cancellation must account for every round's
+consumption without returning the same stock twice. Paid/cancelled bills
+cannot receive additional rounds.
+
+Receipt printing uses the browser's **Print / Save as PDF** dialog; direct
+thermal-printer integration is not included. The print stylesheet must isolate
+the receipt, wrap long item names and exclude navigation and controls. Do not
+invent restaurant contact details, tax IDs or tax rates. Every receipt remains
+marked **SIMULATED / NOT A TAX INVOICE**.
+
+**Rollout constraint:** multi-round persistence requires an additive schema
+migration. That migration has not been approved for the existing local
+databases. Keep the live pre-rounds API running, keep the polished frontend
+compatible with its contract, and disable the new-round action with an explicit
+upgrade-required message. Do not infer migration permission from a feature
+request, or present the source implementation as a live capability.
+
 ## 5. Technical architecture
 
 ### Structure and dependencies
