@@ -50,6 +50,8 @@ public sealed class StockMovement
     public string? Reason { get; set; }
     public int? PurchaseReceiptLineId { get; set; }
     public PurchaseReceiptLine? PurchaseReceiptLine { get; set; }
+    public int? KitchenTicketId { get; set; }
+    public KitchenTicket? KitchenTicket { get; set; }
     public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -77,7 +79,7 @@ public sealed class Order
     public string? CancellationStockDisposition { get; set; }
     public List<OrderItem> Items { get; set; } = [];
     public Payment? Payment { get; set; }
-    public KitchenTicket? Ticket { get; set; }
+    public List<KitchenTicket> Tickets { get; set; } = [];
 }
 
 public sealed class OrderItem
@@ -101,6 +103,7 @@ public sealed class KitchenTicket
     public string Status { get; set; } = "Queued";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsReconstructed { get; set; }
+    public Guid? RequestId { get; set; }
     public List<KitchenTicketItem> Items { get; set; } = [];
 }
 
@@ -185,10 +188,14 @@ public static class OrderRules
     }
 
     public static List<StockMovement> DeductStock(Order order, IEnumerable<RecipeIngredient> recipes, string actor)
+        => DeductStock(order, order.Items, recipes, actor, null, initial: true);
+
+    public static List<StockMovement> DeductStock(Order order, IReadOnlyList<OrderItem> items, IEnumerable<RecipeIngredient> recipes,
+        string actor, KitchenTicket? ticket, bool initial)
     {
         var required = recipes.GroupBy(x => x.IngredientId).Select(g => new {
             Ingredient = g.First().Ingredient,
-            Amount = g.Sum(x => x.Quantity * order.Items.Single(i => i.MenuItemId == x.MenuItemId).Quantity)
+            Amount = g.Sum(x => x.Quantity * items.Single(i => i.MenuItemId == x.MenuItemId).Quantity)
         }).ToList();
         foreach (var row in required) RequireStock(row.Ingredient.Stock, row.Amount, row.Ingredient.Name);
         var movements = new List<StockMovement>();
@@ -196,9 +203,10 @@ public static class OrderRules
         {
             row.Ingredient.Stock -= row.Amount;
             movements.Add(new StockMovement { Ingredient = row.Ingredient, IngredientId = row.Ingredient.Id,
-                OrderId = order.Id, Kind = "Consumption", QuantityChange = -row.Amount, BalanceAfter = row.Ingredient.Stock, Actor = actor, Reason = "Order sent to kitchen" });
+                OrderId = order.Id, KitchenTicket = ticket, Kind = "Consumption", QuantityChange = -row.Amount, BalanceAfter = row.Ingredient.Stock, Actor = actor, Reason = "Order sent to kitchen" });
         }
-        order.ConsumptionMovementCount = movements.Count;
+        if (initial) order.ConsumptionMovementCount = movements.Count;
+        else if (order.ConsumptionMovementCount is int count) order.ConsumptionMovementCount = checked(count + movements.Count);
         return movements;
     }
 
@@ -206,7 +214,7 @@ public static class OrderRules
     {
         if (order.Status is not ("Draft" or "Sent" or "Completed"))
             throw new DomainException("Only unpaid active orders can be cancelled.");
-        if (order.Ticket?.Status == "Cancelled")
+        if (order.Tickets.Any(x => x.Status == "Cancelled"))
             throw new DomainException("Kitchen ticket is already cancelled.");
         if (role is not ("Admin" or "Manager" or "Staff"))
             throw new ForbiddenException();
@@ -219,26 +227,27 @@ public static class OrderRules
             throw new DomainException("Draft cancellations require None; submitted cancellations require Return or Waste.");
         if (order.Status != "Draft" && (order.ConsumptionMovementCount is null || order.ConsumptionMovementCount != consumed.Count ||
             consumed.Any(x => x.Kind != "Consumption" || x.OrderId != order.Id || x.QuantityChange >= 0) ||
-            consumed.Select(x => x.IngredientId).Distinct().Count() != consumed.Count))
+            consumed.GroupBy(x => new { x.KitchenTicketId, x.IngredientId }).Any(g => g.Count() != 1)))
             throw new DomainException("Stock deductions cannot be reconstructed; this order cannot be cancelled automatically.");
         if (order.Status == "Draft" && consumed.Count != 0)
             throw new DomainException("Draft order has unexpected stock movements.");
 
-        var toReturn = disposition == "Return" ? consumed : [];
-        foreach (var movement in toReturn)
-            if (movement.Ingredient.Stock - movement.QuantityChange > 99999999999.999m)
-                throw new DomainException($"Stock exceeds the maximum for {movement.Ingredient.Name}.");
+        var toReturn = disposition == "Return" ? consumed.GroupBy(x => x.IngredientId)
+            .Select(g => new { Ingredient = g.First().Ingredient, Amount = -g.Sum(x => x.QuantityChange) }).ToList() : [];
+        foreach (var row in toReturn)
+            if (row.Ingredient.Stock + row.Amount > 99999999999.999m)
+                throw new DomainException($"Stock exceeds the maximum for {row.Ingredient.Name}.");
         Touch(order);
         var reversals = new List<StockMovement>();
-        foreach (var movement in toReturn)
+        foreach (var row in toReturn)
         {
-            var ingredient = movement.Ingredient;
-            ingredient.Stock -= movement.QuantityChange;
+            var ingredient = row.Ingredient;
+            ingredient.Stock += row.Amount;
             reversals.Add(new StockMovement { Ingredient = ingredient, IngredientId = ingredient.Id, OrderId = order.Id,
-                Kind = "Cancellation", QuantityChange = -movement.QuantityChange, BalanceAfter = ingredient.Stock, Actor = actor, Reason = reason.Trim() });
+                Kind = "Cancellation", QuantityChange = row.Amount, BalanceAfter = ingredient.Stock, Actor = actor, Reason = reason.Trim() });
         }
         order.Status = "Cancelled";
-        if (order.Ticket is not null) order.Ticket.Status = "Cancelled";
+        foreach (var ticket in order.Tickets) ticket.Status = "Cancelled";
         order.CancellationReason = reason.Trim();
         order.CancellationStockDisposition = disposition;
         order.CancelledBy = actor;
@@ -268,10 +277,15 @@ public static class KitchenRules
     public static void Complete(Order order)
     {
         OrderRules.RequireTransition(order.Status, "Sent");
-        if (order.Ticket is null) throw new DomainException("Kitchen ticket is missing.");
-        OrderRules.RequireTransition(order.Ticket.Status, "Ready");
+        RequireReady(order);
         OrderRules.Touch(order);
         order.Status = "Completed";
+    }
+
+    public static void RequireReady(Order order)
+    {
+        if (order.Tickets.Count == 0) throw new DomainException("Kitchen ticket is missing.");
+        if (order.Tickets.Any(x => x.Status != "Ready")) throw new DomainException("All kitchen tickets must be Ready.");
     }
 }
 

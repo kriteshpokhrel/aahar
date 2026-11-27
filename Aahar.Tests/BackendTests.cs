@@ -62,7 +62,7 @@ public class BackendTests
         var order = new Order { Id = 12, Items = [new() { MenuItemId = 4, Name = "Momo", Quantity = 2, UnitPrice = 120m, Notes = "mild" }] };
         var ticket = KitchenRules.CreateTicket(order);
         ticket.Order = order;
-        order.Ticket = ticket;
+        order.Tickets.Add(ticket);
         order.Items[0].Name = "Changed";
         order.Items[0].Notes = "hot";
         Assert.Equal("Momo", ticket.Items[0].Name);
@@ -100,7 +100,7 @@ public class BackendTests
     public void CancellationClosesTheKitchenTicket()
     {
         var ticket = new KitchenTicket { Status = "Preparing" };
-        var order = new Order { Id = 4, Status = "Sent", ConsumptionMovementCount = 0, Ticket = ticket };
+        var order = new Order { Id = 4, Status = "Sent", ConsumptionMovementCount = 0, Tickets = [ticket] };
         OrderRules.Cancel(order, [], "changed mind", "Waste", "manager", "Manager");
         Assert.Equal("Cancelled", ticket.Status);
         Assert.Equal("Cancelled", order.Status);
@@ -192,10 +192,10 @@ public class BackendTests
         Assert.Equal("\"TableId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Sent', 'Completed')", index.GetFilter());
         Assert.True(db.Model.FindEntityType(typeof(Order))!.FindProperty("TableId")!.IsNullable);
         Assert.True(db.Model.FindEntityType(typeof(Order))!.FindProperty("Revision")!.IsConcurrencyToken);
-        Assert.True(db.Model.FindEntityType(typeof(KitchenTicket))!.GetIndexes().Single(x => x.Properties.SingleOrDefault()?.Name == "OrderId").IsUnique);
+        Assert.True(db.Model.FindEntityType(typeof(KitchenTicket))!.GetIndexes().Single(x => x.Properties.Select(p => p.Name).SequenceEqual(["OrderId", "RequestId"])).IsUnique);
         var movements = db.Model.FindEntityType(typeof(StockMovement))!.GetIndexes().Single(x => x.Properties.Select(p => p.Name).SequenceEqual(["OrderId", "IngredientId", "Kind"]));
         Assert.True(movements.IsUnique);
-        Assert.Equal("\"OrderId\" IS NOT NULL", movements.GetFilter());
+        Assert.Equal("\"OrderId\" IS NOT NULL AND \"KitchenTicketId\" IS NULL", movements.GetFilter());
     }
     [Fact]
     public void MapsterPreservesSnapshotFields()
@@ -344,6 +344,14 @@ public sealed class FakeService : IRestaurantService
     public Task<OrderDto> EditOrderItemsAsync(int id, EditOrderItemsRequest r, CancellationToken ct) =>
         CreateOrderAsync(new CreateOrderRequest(null, r.Items), ct);
     public Task<OrderDto> SendOrderAsync(int id, string actor, CancellationToken ct) => throw new NotSupportedException();
+    public Task<AddRoundDto> AddRoundAsync(int id, AddRoundRequest request, string actor, CancellationToken ct)
+    {
+        var items = request.Items.Select(x => new OrderItemDto(x.MenuItemId, "Item", x.Quantity, 10, x.Notes)).ToList();
+        return Task.FromResult(new AddRoundDto(
+            new OrderDto(id, 1, "Sent", DateTime.UtcNow, items, items.Sum(x => x.UnitPrice * x.Quantity), null, null, null, null, null, 2),
+            new KitchenTicketDto(10, id, 1, "Queued", DateTime.UtcNow, false,
+                items.Select(x => new KitchenTicketItemDto(x.MenuItemId, x.Name, x.Quantity, x.UnitPrice, x.Notes)).ToList(), request.RequestId)));
+    }
     public Task<OrderDto> CancelOrderAsync(int id, CancelOrderRequest r, string actor, string role, CancellationToken ct)
     {
         var order = new Order { Id = id, Status = id == 1 ? "Draft" : "Sent", ConsumptionMovementCount = id == 1 ? null : 0 };

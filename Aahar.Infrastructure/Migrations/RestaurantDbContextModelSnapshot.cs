@@ -242,6 +242,9 @@ namespace Aahar.Infrastructure.Migrations
                     b.Property<int>("OrderId")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -249,8 +252,11 @@ namespace Aahar.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId")
-                        .IsUnique();
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("OrderId", "RequestId")
+                        .IsUnique()
+                        .HasFilter("\"RequestId\" IS NOT NULL");
 
                     b.ToTable("KitchenTickets", t =>
                         {
@@ -421,8 +427,7 @@ namespace Aahar.Infrastructure.Migrations
 
                     b.HasIndex("MenuItemId");
 
-                    b.HasIndex("OrderId", "MenuItemId")
-                        .IsUnique();
+                    b.HasIndex("OrderId", "MenuItemId");
 
                     b.ToTable("OrderItem", t =>
                         {
@@ -606,6 +611,9 @@ namespace Aahar.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<int?>("KitchenTicketId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -630,9 +638,13 @@ namespace Aahar.Infrastructure.Migrations
 
                     b.HasIndex("IngredientId", "Id");
 
+                    b.HasIndex("KitchenTicketId", "IngredientId")
+                        .IsUnique()
+                        .HasFilter("\"KitchenTicketId\" IS NOT NULL");
+
                     b.HasIndex("OrderId", "IngredientId", "Kind")
                         .IsUnique()
-                        .HasFilter("\"OrderId\" IS NOT NULL");
+                        .HasFilter("\"OrderId\" IS NOT NULL AND \"KitchenTicketId\" IS NULL");
 
                     b.ToTable("StockMovements", t =>
                         {
@@ -641,6 +653,8 @@ namespace Aahar.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_StockMovements_Kind", "((\"Kind\" = 'Opening' AND \"QuantityChange\" >= 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Receipt' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL) OR (\"Kind\" = 'Consumption' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Cancellation' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NOT NULL) OR (\"Kind\" = 'Waste' AND \"QuantityChange\" < 0 AND \"OrderId\" IS NULL)) AND \"PurchaseReceiptLineId\" IS NULL OR (\"Kind\" = 'Purchase' AND \"QuantityChange\" > 0 AND \"OrderId\" IS NULL AND \"PurchaseReceiptLineId\" IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_StockMovements_Reason", "\"Kind\" NOT IN ('Purchase', 'Waste') OR (\"Reason\" IS NOT NULL AND length(btrim(\"Reason\")) > 0)");
+
+                            t.HasCheckConstraint("CK_StockMovements_Ticket", "\"KitchenTicketId\" IS NULL OR (\"Kind\" = 'Consumption' AND \"OrderId\" IS NOT NULL)");
                         });
                 });
 
@@ -793,8 +807,8 @@ namespace Aahar.Infrastructure.Migrations
             modelBuilder.Entity("Aahar.Domain.KitchenTicket", b =>
                 {
                     b.HasOne("Aahar.Domain.Order", "Order")
-                        .WithOne("Ticket")
-                        .HasForeignKey("Aahar.Domain.KitchenTicket", "OrderId")
+                        .WithMany("Tickets")
+                        .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -909,6 +923,11 @@ namespace Aahar.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Aahar.Domain.KitchenTicket", "KitchenTicket")
+                        .WithMany()
+                        .HasForeignKey("KitchenTicketId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Aahar.Domain.Order", "Order")
                         .WithMany()
                         .HasForeignKey("OrderId")
@@ -920,6 +939,8 @@ namespace Aahar.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Ingredient");
+
+                    b.Navigation("KitchenTicket");
 
                     b.Navigation("Order");
 
@@ -958,7 +979,7 @@ namespace Aahar.Infrastructure.Migrations
 
                     b.Navigation("Payment");
 
-                    b.Navigation("Ticket");
+                    b.Navigation("Tickets");
                 });
 
             modelBuilder.Entity("Aahar.Domain.PurchaseReceipt", b =>

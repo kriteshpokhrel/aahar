@@ -19,9 +19,11 @@ public record EditOrderItemsRequest(List<OrderLineRequest> Items);
 public record OrderItemDto(int MenuItemId, string Name, int Quantity, decimal UnitPrice, string? Notes);
 public record PaymentDto(int Id, string Method, decimal Amount, DateTime PaidAt);
 public record OrderDto(int Id, int? TableId, string Status, DateTime CreatedAt, List<OrderItemDto> Items, decimal Total, PaymentDto? Payment,
-    DateTime? CancelledAt, string? CancelledBy, string? CancellationReason, string? CancellationStockDisposition);
+    DateTime? CancelledAt, string? CancelledBy, string? CancellationReason, string? CancellationStockDisposition, int RoundCount = 0);
 public record KitchenTicketItemDto(int MenuItemId, string Name, int Quantity, decimal UnitPrice, string? Notes);
-public record KitchenTicketDto(int Id, int OrderId, int? TableId, string Status, DateTime CreatedAt, bool IsReconstructed, List<KitchenTicketItemDto> Items);
+public record KitchenTicketDto(int Id, int OrderId, int? TableId, string Status, DateTime CreatedAt, bool IsReconstructed, List<KitchenTicketItemDto> Items, Guid? RequestId = null);
+public record AddRoundRequest(Guid RequestId, List<OrderLineRequest> Items);
+public record AddRoundDto(OrderDto Order, KitchenTicketDto Ticket);
 public record PaymentRequest(string Method);
 public record CancelOrderRequest(string Reason, string StockDisposition);
 public record SalesDto(int OrdersPaid, decimal Total);
@@ -44,6 +46,7 @@ public interface IRestaurantService
     Task<OrderDto> CreateOrderAsync(CreateOrderRequest request, CancellationToken ct);
     Task<OrderDto> EditOrderItemsAsync(int id, EditOrderItemsRequest request, CancellationToken ct);
     Task<OrderDto> SendOrderAsync(int id, string actor, CancellationToken ct);
+    Task<AddRoundDto> AddRoundAsync(int id, AddRoundRequest request, string actor, CancellationToken ct);
     Task<OrderDto> CancelOrderAsync(int id, CancelOrderRequest request, string actor, string role, CancellationToken ct);
     Task<OrderDto> CompleteOrderAsync(int id, CancellationToken ct);
     Task<OrderDto> PayAsync(int id, PaymentRequest request, CancellationToken ct);
