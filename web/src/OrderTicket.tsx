@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { KitchenTicket, MenuItem, Order, OrderLine, PaymentMethod, StockDisposition, Table } from './api'
 import { DraftEditor } from './DraftEditor'
+import { statusClass } from './overviewMetrics'
 
 const money = (amount: number) => `Rs ${amount.toLocaleString('en-NP', { maximumFractionDigits: 2 })}`
 
@@ -35,7 +36,7 @@ export function OrderTicket({ order, ticket, menu, tables, busy, canServe, canCo
     if (succeeded) { setCancelOpen(false); setReason(''); setDisposition('') }
   }
   return <article className="ticket">
-    <div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{order.tableId === null ? 'Takeaway' : table ? `Table ${table.number}` : `Table #${order.tableId}`}</h3></div><span className="status status-busy">{order.status}</span></div>
+    <div className="ticket-top"><div><span className="eyebrow">ORDER #{order.id}</span><h3>{order.tableId === null ? 'Takeaway' : table ? `Table ${table.number}` : `Table #${order.tableId}`}</h3></div><span className={`status ${statusClass(order.status)}`}>{order.status}</span></div>
     <div className="ticket-items">{order.items.map((item, index) => <div key={`${item.menuItemId}-${index}`}><span><b>{item.quantity}×</b> {item.name}{item.notes && <small className="ticket-note">Note: {item.notes}</small>}</span><span>{money(item.quantity * item.unitPrice)}</span></div>)}</div>
     <div className="ticket-bottom"><span>{money(order.total)}</span><div className="ticket-actions">
       {canServe && status === 'draft' && <button className="button small secondary" disabled={busy || editing} onClick={() => void update(order, 'send')}>Send to kitchen</button>}

@@ -18,7 +18,7 @@ function IngredientHistory({ item, version }: { item: Ingredient; version: numbe
   </div>
 }
 
-function IngredientManager({ ingredients, refresh }: { ingredients: Ingredient[]; refresh: () => Promise<void> }) {
+function IngredientManager({ ingredients, refresh, initialLowOnly }: { ingredients: Ingredient[]; refresh: () => Promise<void>; initialLowOnly: boolean }) {
   const [name, setName] = useState('')
   const [unit, setUnit] = useState('')
   const [opening, setOpening] = useState('0')
@@ -27,7 +27,7 @@ function IngredientManager({ ingredients, refresh }: { ingredients: Ingredient[]
   const [action, setAction] = useState<'stock' | 'waste' | 'threshold'>('stock')
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
-  const [lowOnly, setLowOnly] = useState(false)
+  const [lowOnly, setLowOnly] = useState(initialLowOnly)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -76,7 +76,7 @@ function IngredientManager({ ingredients, refresh }: { ingredients: Ingredient[]
   </section>
 }
 
-export function Inventory({ uncertain, setUncertain }: { uncertain: UncertainPurchase | null; setUncertain: (value: UncertainPurchase | null) => void }) {
+export function Inventory({ uncertain, setUncertain, initialLowOnly = false }: { uncertain: UncertainPurchase | null; setUncertain: (value: UncertainPurchase | null) => void; initialLowOnly?: boolean }) {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [tab, setTab] = useState<'ingredients' | 'suppliers' | 'purchases'>('ingredients')
@@ -100,6 +100,6 @@ export function Inventory({ uncertain, setUncertain }: { uncertain: UncertainPur
   }, [])
   return <div className="surface"><div className="inventory-tabs" aria-label="Inventory sections">{(['ingredients', 'suppliers', 'purchases'] as const).map(value => <button key={value} type="button" className={`button small ${tab === value ? 'primary' : 'secondary'}`} aria-pressed={tab === value} onClick={() => setTab(value)}>{value === 'purchases' ? 'Purchase receipts' : value[0].toUpperCase() + value.slice(1)}</button>)}<button type="button" className="button small secondary" onClick={() => void refresh()}>Refresh stock</button></div>
     {loading && <p role="status">Loading inventory…</p>}{error && <div className="alert" role="alert">{error}</div>}
-    {!loading && !error && <><div hidden={tab !== 'ingredients'}><IngredientManager ingredients={ingredients} refresh={refresh} /></div><div hidden={tab !== 'suppliers'}><InventorySuppliers suppliers={suppliers} refresh={refresh} /></div><div hidden={tab !== 'purchases'}><InventoryPurchases ingredients={ingredients} suppliers={suppliers} refresh={refresh} uncertain={uncertain} setUncertain={setUncertain} /></div></>}
+    {!loading && !error && <><div hidden={tab !== 'ingredients'}><IngredientManager ingredients={ingredients} refresh={refresh} initialLowOnly={initialLowOnly} /></div><div hidden={tab !== 'suppliers'}><InventorySuppliers suppliers={suppliers} refresh={refresh} /></div><div hidden={tab !== 'purchases'}><InventoryPurchases ingredients={ingredients} suppliers={suppliers} refresh={refresh} uncertain={uncertain} setUncertain={setUncertain} /></div></>}
   </div>
 }
