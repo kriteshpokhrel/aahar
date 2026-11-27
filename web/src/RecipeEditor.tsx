@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, ApiError } from './api'
 import type { Ingredient, MenuItem } from './api'
+import { uncertainMutationOutcome } from './orderSafety'
 
 type Line = { key: number; ingredientId: string; quantity: string }
 
@@ -62,7 +63,7 @@ function RecipeForm({ id, dirty, setDirty, saving, setSaving }: {
       await api.saveRecipe(id, lines.map(line => ({ ingredientId: Number(line.ingredientId), quantity: Number(line.quantity) })))
       setDirty(false); setNotice('Recipe saved.')
     } catch (e) {
-      const uncertain = !(e instanceof ApiError) || ![400, 401, 403, 404, 429].includes(e.status)
+      const uncertain = e instanceof ApiError && e.status === 404 ? false : uncertainMutationOutcome(e) || (e instanceof ApiError && e.status === 409)
       setMustReload(uncertain)
       setError(`${e instanceof Error ? e.message : 'Unable to save recipe.'}${uncertain ? ' Reload the recipe before saving again; the outcome or current recipe may have changed.' : ''}`)
     } finally { setSaving(false) }

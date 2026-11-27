@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { api, ApiError } from './api'
+import { api } from './api'
 import type { Ingredient, PurchaseReceipt, Supplier } from './api'
 import type { UncertainPurchase } from './Inventory'
+import { uncertainMutationOutcome } from './orderSafety'
 
 type DraftLine = { key: number; ingredientId: string; quantity: string; unitCost: string }
 const blankLine = (key: number): DraftLine => ({ key, ingredientId: '', quantity: '', unitCost: '' })
@@ -65,7 +66,7 @@ export function InventoryPurchases({ ingredients, suppliers, refresh, uncertain,
       received = await api.receivePurchase(supplier.id, reference.trim(), reason.trim(), input.filter(line => line !== null))
     } catch (e) {
       const text = e instanceof Error ? e.message : 'Unable to record purchase.'
-      if (!(e instanceof ApiError) || ![400, 401, 403, 409, 429].includes(e.status)) setUncertain({ supplier: supplier.name, reference: reference.trim(), pending: false })
+      if (uncertainMutationOutcome(e)) setUncertain({ supplier: supplier.name, reference: reference.trim(), pending: false })
       else setUncertain(null)
       setError(text); submitting.current = false; setBusy(false); return
     }
