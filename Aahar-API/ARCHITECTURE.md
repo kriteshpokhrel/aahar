@@ -12,7 +12,7 @@ This is a single-restaurant, same-computer portfolio application, not a hosted m
 | `Aahar-API` | ASP.NET Core endpoints, authentication, authorization, antiforgery, middleware, and dependency-injection composition | Application and Infrastructure |
 | `Aahar.Tests` | Domain, mapping, HTTP host, and offline EF model/query tests | All backend projects |
 
-The API references Infrastructure to compose implementations, while endpoints call Application interfaces. Infrastructure uses a scoped `RestaurantDbContext`; domain rules are called by services, and Mapster maps compatible entities to response records. Some composite responses are assembled explicitly. This is a practical layered implementation, not a claim that every rule or mapping is isolated from persistence. The old SQL Server scaffold in `Aahar-API/Data`, `Models`, and `Repository` remains in the repository but is excluded from compilation and is not a data migration.
+The API references Infrastructure to compose implementations, while endpoints call Application interfaces. Infrastructure uses a scoped `RestaurantDbContext`; domain rules are called by services, and Mapster maps compatible entities to response records. Some composite responses are assembled explicitly. Guest requests use an application-defined repository and unit of work sharing the scoped context; serializable transactions and menu row locks remain in Infrastructure. Other workflows still use the context directly and have not yet been moved to repositories. The unused old SQL Server scaffold was removed; its data is not migrated.
 
 ## Important workflows and invariants
 

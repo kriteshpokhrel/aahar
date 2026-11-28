@@ -5,7 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="Data/**;Models/**;Repository/**" />
     <ProjectReference Include="../Aahar.Application/Aahar.Application.csproj" />
     <ProjectReference Include="../Aahar.Infrastructure/Aahar.Infrastructure.csproj" />
   </ItemGroup>

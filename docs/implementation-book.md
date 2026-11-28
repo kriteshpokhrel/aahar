@@ -40,8 +40,8 @@ context, generic repository and unit of work. A .NET 10/PostgreSQL backend
 foundation has since been added; its precise scope and unverified behavior are
 listed in [backend setup and limitations](../Aahar-API/BACKEND.md). It is not
 the finished product. The machine initially exposed .NET 6 and 7 SDKs; .NET 10
-was installed into this session's tool directory. The old SQL Server scaffold
-is excluded from compilation, and its data is not migrated.
+was installed into this session's tool directory. The unused old SQL Server
+scaffold has been removed, and its data is not migrated.
 
 ### Current implementation
 

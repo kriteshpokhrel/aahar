@@ -16,6 +16,8 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
     services.GetRequiredService<IConfiguration>().GetConnectionString("Aahar")
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
+builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+builder.Services.AddScoped<IGuestRequestRepository, GuestRequestRepository>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPasswordChangeService, PasswordChangeService>();
