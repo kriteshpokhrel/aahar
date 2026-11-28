@@ -49,11 +49,12 @@ database. See [backend setup](../Aahar-API/BACKEND.md) for the local safety rule
 
 ## GitHub merge requirements
 
-Repository settings are separate from workflow YAML. The intended `main`
+Repository settings are separate from workflow YAML. The `main`
 policy requires a pull request, both successful GitHub Actions checks, and
 up-to-date checks against the target branch. Non-fast-forward updates (force
 pushes) are blocked. No bypass actors are configured for the CI requirement.
 Existing default-branch review and update restrictions remain in place.
 
-Do not describe this policy as active until the hosted workflow has passed and
-the live GitHub ruleset has been configured and read back successfully.
+The [main CI ruleset](https://github.com/kriteshpokhrel/aahar/rules/28256182)
+is active. The existing default-branch ruleset remains independent; consult
+GitHub for its current review and bypass settings.

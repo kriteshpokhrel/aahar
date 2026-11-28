@@ -64,8 +64,9 @@ sample service and mocked legacy-API checks covered layout, capability gating
 and saved-draft auto-send failure. A long receipt produced an isolated,
 multi-page 80 mm PDF. These checks do not establish full live staff end-to-end
 coverage, physical printer compatibility or accessibility compliance.
-Multi-round backend source and its offline-reviewed migrations are integrated,
-but the local schema upgrade and PostgreSQL round/race tests remain unexecuted.
+Multi-round backend source and its offline-reviewed migrations are integrated.
+PostgreSQL workflow and round/race tests pass against a disposable CI database,
+but the existing local database has not been upgraded.
 
 Shared restaurant settings now have an Admin-only editing screen and a public
 business profile for the guest menu, workspace and receipts. This is an
