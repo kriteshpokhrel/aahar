@@ -1,7 +1,6 @@
 using Aahar.Application;
 using Aahar.Domain;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 
 namespace Aahar.Infrastructure;
 
@@ -17,18 +16,17 @@ public static class PasswordChange
         return hasher.HashPassword(user, request.NewPassword);
     }
 
-    public static IQueryable<User> UnchangedUser(IQueryable<User> users, int id, string hash) =>
-        users.Where(x => x.Id == id && x.PasswordHash == hash);
 }
 
-public sealed class PasswordChangeService(RestaurantDbContext db, IPasswordHasher<User> hasher) : IPasswordChangeService
+public sealed class PasswordChangeService(IUserRepository repository, IUnitOfWork unitOfWork, IPasswordHasher<User> hasher) : IPasswordChangeService
 {
     public async Task ChangeAsync(string username, ChangePasswordRequest request, CancellationToken ct)
     {
-        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Username == username, ct);
+        var user = await repository.FindForPasswordChangeAsync(username, ct);
         var newHash = PasswordChange.CreateHash(user, request, hasher);
-        var updated = await PasswordChange.UnchangedUser(db.Users, user!.Id, user.PasswordHash)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PasswordHash, newHash), ct);
+        await using var tx = await unitOfWork.BeginSerializableAsync(ct);
+        var updated = await repository.ChangePasswordIfUnchangedAsync(user!.Id, user.PasswordHash, newHash, ct);
         if (updated != 1) throw new ConflictException("Password changed concurrently; sign in again and retry.");
+        await tx.CommitAsync(ct);
     }
 }

@@ -1,18 +1,16 @@
-using System.Data;
+using Aahar.Application;
 using Aahar.Domain;
-using Microsoft.EntityFrameworkCore;
 
 namespace Aahar.Infrastructure;
 
 public static class DemoDataSeeder
 {
-    public static async Task SeedAsync(RestaurantDbContext db, CancellationToken ct = default)
+    public static async Task SeedAsync(IInstallationRepository installation, IMenuRepository menu,
+        IOrderRepository orders, IInventoryRepository inventory, IUnitOfWork unitOfWork, CancellationToken ct = default)
     {
-        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1094799699)", ct);
-        if (await db.MenuItems.AnyAsync(ct) || await db.Tables.AnyAsync(ct) ||
-            await db.Ingredients.AnyAsync(ct) || await db.Orders.AnyAsync(ct) ||
-            await db.GuestRequests.AnyAsync(ct) || await db.Suppliers.AnyAsync(ct))
+        await using var tx = await unitOfWork.BeginSerializableAsync(ct);
+        await installation.LockDemoSeedAsync(ct);
+        if (await installation.RestaurantDataExistsAsync(ct))
             throw new InvalidOperationException("Demo seed refused: restaurant data already exists.");
 
         var rice = new Ingredient { Name = "Rice", Unit = "kg", Stock = 20m };
@@ -21,10 +19,10 @@ public static class DemoDataSeeder
         var ingredients = new[] { (rice, 3m), (vegetables, 2m), (tea, 0.5m) };
         foreach (var (ingredient, threshold) in ingredients)
         {
-            db.Ingredients.Add(ingredient);
-            db.IngredientThresholdChanges.Add(InventoryRules.ChangeThreshold(
+            inventory.AddIngredient(ingredient);
+            inventory.AddThresholdChange(InventoryRules.ChangeThreshold(
                 ingredient, threshold, "Demo opening threshold", "demo-seed", initial: true));
-            db.StockMovements.Add(new StockMovement
+            inventory.AddMovement(new StockMovement
             {
                 Ingredient = ingredient,
                 Kind = "Opening",
@@ -35,7 +33,8 @@ public static class DemoDataSeeder
             });
         }
 
-        db.MenuItems.AddRange(
+        var items = new[]
+        {
             new MenuItem
             {
                 Name = "Vegetable rice bowl", Category = "Mains", Description = "Rice with seasonal vegetables",
@@ -54,13 +53,12 @@ public static class DemoDataSeeder
             {
                 Name = "Masala tea", Category = "Drinks", Description = "Tea with warming spices",
                 Price = 120m, Recipe = [new RecipeIngredient { Ingredient = tea, Quantity = 0.01m }]
-            });
-        db.Tables.AddRange(Enumerable.Range(1, 6).Select(number => new DiningTable
-        {
-            Number = number,
-            Capacity = number is 1 or 5 ? 2 : 4
-        }));
-        await db.SaveChangesAsync(ct);
+            }
+        };
+        foreach (var item in items) menu.Add(item);
+        foreach (var number in Enumerable.Range(1, 6))
+            orders.AddTable(new DiningTable { Number = number, Capacity = number is 1 or 5 ? 2 : 4 });
+        await unitOfWork.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
     }
 }

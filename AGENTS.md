@@ -17,6 +17,12 @@ product behavior; distinguish planned capabilities from implemented ones.
 - Use interfaces at meaningful boundaries and dependency injection. Apply SOLID
   without adding generic abstractions that obscure behavior. Use Mapster for
   DTO mapping, not for business decisions.
+- Keep database access in `Aahar.Infrastructure/Persistence`, behind typed
+  `Aahar.Application/Persistence` contracts. Services use the shared scoped
+  `IUnitOfWork` for saves and explicit transaction commits; do not inject
+  `RestaurantDbContext` into services or expose `IQueryable` from contracts.
+  Preserve conditional password updates, shared row locks and advisory locks
+  inside their callers' transactions. File stores have separate boundaries.
 - Money uses decimal arithmetic and explicit rounding; preserve historical
   price snapshots. Treat order, stock and payment changes as transactional
   business operations, not independent CRUD updates.

@@ -24,9 +24,66 @@ public sealed class PostgresFactAttribute : FactAttribute
     }
 }
 
+public sealed class PostgresTheoryAttribute : TheoryAttribute
+{
+    public PostgresTheoryAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AAHAR_TEST_CONNECTION")))
+            Skip = "Requires the separately provisioned PostgreSQL CI database.";
+    }
+}
+
 [Collection("PostgreSQL")]
 public class PostgresWorkflowTests
 {
+    [PostgresTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SharedUnitOfWorkPersistsOrRollsBackChangesAcrossRepositories(bool commit)
+    {
+        var connection = Environment.GetEnvironmentVariable("AAHAR_TEST_CONNECTION")!;
+        var parsed = new NpgsqlConnectionStringBuilder(connection);
+        Assert.Equal("aahar_test", parsed.Database);
+        Assert.Contains(parsed.Host, new[] { "localhost", "127.0.0.1", "::1" });
+        var options = new DbContextOptionsBuilder<RestaurantDbContext>().UseNpgsql(connection).Options;
+        await using var db = new RestaurantDbContext(options);
+        var menu = new MenuRepository(db);
+        var inventory = new InventoryRepository(db);
+        var orders = new OrderRepository(db);
+        var unitOfWork = new EfUnitOfWork(db);
+        var name = "uow-" + Guid.NewGuid().ToString("N");
+        var ingredient = new Ingredient { Name = name, Unit = "kg", Stock = 3 };
+        var item = new MenuItem { Name = name, Category = "Test", Price = 7,
+            Recipe = [new RecipeIngredient { Ingredient = ingredient, Quantity = 1 }] };
+        var order = new Order { Items = [new OrderItem { MenuItem = item, Name = name, Quantity = 1, UnitPrice = 7 }] };
+
+        await using (var transaction = await unitOfWork.BeginSerializableAsync(default))
+        {
+            inventory.AddIngredient(ingredient);
+            menu.Add(item);
+            orders.Add(order);
+            await using (var beforeSave = new RestaurantDbContext(options))
+            {
+                Assert.False(await beforeSave.Ingredients.AnyAsync(x => x.Name == name));
+                Assert.False(await beforeSave.MenuItems.AnyAsync(x => x.Name == name));
+            }
+
+            await unitOfWork.SaveChangesAsync(default);
+            Assert.Same(ingredient, await inventory.FindIngredientAsync(ingredient.Id, default));
+            ingredient.Stock = 2;
+            inventory.AddMovement(new StockMovement { Ingredient = ingredient, Order = order,
+                Kind = "Consumption", QuantityChange = -1, BalanceAfter = 2, Actor = "synthetic" });
+            await unitOfWork.SaveChangesAsync(default);
+            if (commit) await transaction.CommitAsync(default);
+        }
+
+        await using var verify = new RestaurantDbContext(options);
+        Assert.Equal(commit, await verify.Ingredients.AnyAsync(x => x.Name == name && x.Stock == 2));
+        Assert.Equal(commit, await verify.MenuItems.AnyAsync(x => x.Name == name));
+        Assert.Equal(commit, await verify.Orders.AnyAsync(x => x.Id == order.Id));
+        Assert.Equal(commit, await verify.StockMovements.AnyAsync(x => x.OrderId == order.Id));
+    }
+
     [PostgresFact]
     public async Task OrderAndGuestWorkflowsPersistAndEnforceAuthorization()
     {
@@ -167,7 +224,9 @@ public class PostgresWorkflowTests
 
         await using var verify = new RestaurantDbContext(options);
         var existingMenuCount = await verify.MenuItems.CountAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => DemoDataSeeder.SeedAsync(verify));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DemoDataSeeder.SeedAsync(
+            new InstallationRepository(verify), new MenuRepository(verify), new OrderRepository(verify),
+            new InventoryRepository(verify), new EfUnitOfWork(verify)));
         Assert.Equal(existingMenuCount, await verify.MenuItems.CountAsync());
     }
 

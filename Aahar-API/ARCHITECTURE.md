@@ -7,12 +7,22 @@ This is a single-restaurant, same-computer portfolio application, not a hosted m
 | Project | Responsibility | Dependencies |
 | --- | --- | --- |
 | `Aahar.Domain` | Entities and business rules for orders, kitchen, guest requests, inventory, and reporting date boundaries | No project dependencies |
-| `Aahar.Application` | Service interfaces and request/response records | Domain |
-| `Aahar.Infrastructure` | EF Core PostgreSQL model and migrations, service implementations, guest token generation, reporting queries, and Mapster DTO mapping | Application and Domain |
+| `Aahar.Application` | Service and typed persistence interfaces, unit-of-work contract, request/response records | Domain |
+| `Aahar.Infrastructure` | EF Core PostgreSQL repositories and unit of work, model and migrations, service implementations, guest token generation, reporting queries, and Mapster DTO mapping | Application and Domain |
 | `Aahar-API` | ASP.NET Core endpoints, authentication, authorization, antiforgery, middleware, and dependency-injection composition | Application and Infrastructure |
 | `Aahar.Tests` | Domain, mapping, HTTP host, and offline EF model/query tests | All backend projects |
 
-The API references Infrastructure to compose implementations, while endpoints call Application interfaces. Infrastructure uses a scoped `RestaurantDbContext`; domain rules are called by services, and Mapster maps compatible entities to response records. Some composite responses are assembled explicitly. Guest requests use an application-defined repository and unit of work sharing the scoped context; serializable transactions and menu row locks remain in Infrastructure. Other workflows still use the context directly and have not yet been moved to repositories. The unused old SQL Server scaffold was removed; its data is not migrated.
+The API references Infrastructure to compose implementations, while endpoints call Application interfaces. All database services depend on typed Application repositories and `IUnitOfWork`, not `RestaurantDbContext`. Domain rules are called by services, and Mapster maps compatible entities to response records. Some composite responses are assembled explicitly. The unused old SQL Server scaffold was removed; its data is not migrated.
+
+## Persistence boundaries
+
+Contracts live in `Aahar.Application/Persistence`; EF implementations and SQL query builders live in `Aahar.Infrastructure/Persistence`. Orchestration lives in `Aahar.Infrastructure/Services`, where the existing Mapster and Identity dependencies remain. No EF types or `IQueryable` cross the Application boundary. Repositories cover menu and recipes, tables/orders/payments/kitchen, ingredients/stock/suppliers/purchases, guest requests, users/passwords, reports, and installation guards.
+
+Every repository and `EfUnitOfWork` is scoped and receives the same scoped `RestaurantDbContext`. Repository adds/removes stage tracked changes; `SaveChangesAsync` flushes them. Use cases explicitly open serializable transactions, save and commit. Recipe replacement still saves deletions before inserts inside the same transaction. Disposing an uncommitted transaction rolls back all database writes; discard the failed request scope rather than reusing its tracked entities.
+
+Password changes are the deliberate exception to staged writes: a repository executes a parameterized conditional update matching the original user/hash, inside the service's explicit unit-of-work transaction. A zero-row update returns a conflict, not success. Menu/supplier shared row locks and installation advisory locks also execute immediately and remain inside their callers' transactions. There are no automatic retries for uncertain operations.
+
+Menu image files and restaurant-profile JSON are separate storage adapters, not participants in the PostgreSQL unit of work. This refactor changes neither database schema nor installation setup and does not migrate existing databases.
 
 ## Important workflows and invariants
 
@@ -32,4 +42,4 @@ These workflows use serializable transactions for coordinated changes; order/req
 
 The implementation uses .NET 10, EF Core with the Npgsql PostgreSQL provider, ASP.NET Core Identity's password hasher, cookie authentication, antiforgery, and Mapster; project files are authoritative for package versions. The API has no background migration or database creation. Payments do not contact a provider, and the application is **not IRD certified** or suitable for real fiscal invoicing.
 
-The automated suite exercises domain rules, mapping, HTTP authorization/CSRF, and offline PostgreSQL SQL translation. It does not establish that migrations, isolation, recovery, or concurrent operations work on a live PostgreSQL server. Those require explicitly approved tests against a separately provisioned disposable database.
+The automated suite exercises domain rules, mapping, HTTP authorization/CSRF, service transaction boundaries, and offline PostgreSQL SQL translation. CI also provisions fresh PostgreSQL for workflow/race tests and repository commit/rollback checks. These selected checks do not establish complete migration-upgrade, end-to-end, or recovery coverage. Local database tests require explicit permission and a separately provisioned test database.

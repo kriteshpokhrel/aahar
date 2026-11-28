@@ -4,6 +4,14 @@ Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Cor
 
 See [architecture](ARCHITECTURE.md), [security assumptions](SECURITY.md), and [operations and recovery](OPERATIONS.md) for design and operator guidance.
 
+All database workflows use typed repositories and an explicit scoped unit of
+work: menu/recipes, orders/tables/kitchen/payments, inventory/purchases,
+guest requests, users/passwords, reporting, and bootstrap/demo guards.
+Repository writes share one context; services own save and transaction commit
+boundaries. Conditional password writes and row/advisory locks execute within
+those transactions. Image/profile file storage remains separate. This
+persistence refactor introduces no migrations or setup changes.
+
 ## Setup
 
 No database is created or migrated automatically. The initial migration is for a **new, dedicated, empty PostgreSQL database**; it is not an upgrade or data migration from the old SQL Server scaffold. Review all migrations in `Aahar.Infrastructure/Migrations` and the generated SQL before applying them. The initial migration's `Down` drops tables; later migrations refuse rollback because it would destroy history. Do not apply changes to any database or run rollback commands without explicit approval and a backup.
@@ -185,7 +193,8 @@ provisioned, migrated local database named `aahar_test`. The test refuses other
 database names and non-loopback hosts; it adds uniquely named test records and
 does not reset or delete data. The test exercises authentication, orders,
 kitchen, simulated payment, guest requests, authorization and selected stock
-and table races. It does not replace full end-to-end, migration-upgrade or
+and table races. CI also verifies shared-repository staged writes, commit and
+rollback against its disposable PostgreSQL service. It does not replace full end-to-end, migration-upgrade or
 recovery verification.
 
 This is an intentionally incomplete portfolio foundation: no supplier deletion, purchase receipt correction/returns or cost-based valuation, guest request expiration/idempotency or token recovery, post-send order editing, refunds, user management beyond creation and self-service password change, password reset/revocation, report export or tax accounting, backups, comprehensive audit trail, production deployment hardening, or real payment integration. The initial migration's rollback is destructive. The old SQL Server data and schema are not migrated.

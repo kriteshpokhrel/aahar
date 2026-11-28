@@ -26,7 +26,7 @@ public class OrderRoundTests
             new Order { Id = 3, Status = "Cancelled", CreatedAt = date.AddDays(-1), CancelledAt = paidAt,
                 CancelledBy = "manager", CancellationReason = "closed", CancellationStockDisposition = "Waste" }
         };
-        var result = RestaurantService.OrdersQuery(orders.AsQueryable()).ToList();
+        var result = OrderQueries.List(orders.AsQueryable()).ToList();
         Assert.Equal(2, result[0].Id);
         Assert.Equal(0, result[0].Total);
         Assert.Equal(0, result[0].RoundCount);
@@ -50,7 +50,7 @@ public class OrderRoundTests
     {
         using var db = new RestaurantDbContext(new DbContextOptionsBuilder<RestaurantDbContext>()
             .UseNpgsql("Host=localhost;Database=not_used;Username=unused;Password=unused").Options);
-        var sql = RestaurantService.OrdersQuery(db.Orders.AsNoTracking().AsSingleQuery()).ToQueryString();
+        var sql = OrderQueries.List(db.Orders.AsNoTracking().AsSingleQuery()).ToQueryString();
         Assert.Contains("count(*)", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("SUM(", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("FROM \"KitchenTickets\"", sql);

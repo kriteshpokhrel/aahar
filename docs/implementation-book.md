@@ -346,11 +346,17 @@ middleware and HTTP contracts. Dependencies point inward; no EF or web types
 in domain. Use Mapster explicitly at API/application DTO boundaries; money,
 state transitions and security-sensitive values are handled deliberately.
 
-Use dependency injection with scoped database contexts and use cases. Prefer
-use-case-specific queries over a generic repository for every entity; EF Core
-already supplies unit-of-work behavior. The existing scaffold can be replaced
-incrementally, but no SQL Server database should be migrated or deleted
-without a separately approved data migration plan.
+Use dependency injection with scoped database contexts, typed repositories and
+an explicit `IUnitOfWork`. All database workflows now use contracts in
+`Aahar.Application/Persistence`; EF implementations and query builders live in
+`Aahar.Infrastructure/Persistence`, sharing one scoped context. Services own
+transaction/save/commit boundaries; repositories do not expose `IQueryable`.
+Use-case-specific operations replace the old generic SQL Server scaffold,
+which has been removed without migrating its data. Password compare-and-update
+executes immediately within its unit-of-work transaction; file stores remain
+outside database transactions. See [persistence boundaries](../Aahar-API/ARCHITECTURE.md).
+No existing database should be migrated or deleted without a separately
+approved data migration plan.
 
 Frontend: React + TypeScript, router, a small typed API client, server-state
 management and a token-based CSS design system. Choose minimal maintained

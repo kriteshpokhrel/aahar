@@ -17,6 +17,12 @@ builder.Services.AddDbContext<RestaurantDbContext>((services, options) => option
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+builder.Services.AddScoped<IMenuRepository, MenuRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<IInventoryRepository, InventoryRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IReportRepository, ReportRepository>();
+builder.Services.AddScoped<IInstallationRepository, InstallationRepository>();
 builder.Services.AddScoped<IGuestRequestRepository, GuestRequestRepository>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -87,7 +93,12 @@ if (args.Contains("--seed-demo-data"))
     if (!app.Environment.IsDevelopment())
         throw new InvalidOperationException("Demo seeding is available only in the Development environment.");
     using var scope = app.Services.CreateScope();
-    await DemoDataSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<RestaurantDbContext>());
+    await DemoDataSeeder.SeedAsync(
+        scope.ServiceProvider.GetRequiredService<IInstallationRepository>(),
+        scope.ServiceProvider.GetRequiredService<IMenuRepository>(),
+        scope.ServiceProvider.GetRequiredService<IOrderRepository>(),
+        scope.ServiceProvider.GetRequiredService<IInventoryRepository>(),
+        scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
     Console.WriteLine("Fictional demo menu, tables and stock created.");
     return;
 }
@@ -98,13 +109,15 @@ if (args.Contains("--bootstrap-admin"))
     if (string.IsNullOrWhiteSpace(username) || username.Length > 100 || password is not { Length: >= 12 and <= 256 })
         throw new InvalidOperationException("Set AAHAR_ADMIN_USERNAME and a password of at least 12 characters in AAHAR_ADMIN_PASSWORD.");
     using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<RestaurantDbContext>();
-    await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-    await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1094799698)");
-    if (await db.Users.AnyAsync()) throw new InvalidOperationException("Bootstrap refused: users already exist.");
+    var installation = scope.ServiceProvider.GetRequiredService<IInstallationRepository>();
+    var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+    await using var tx = await unitOfWork.BeginSerializableAsync(default);
+    await installation.LockBootstrapAsync(default);
+    if (await installation.UsersExistAsync(default)) throw new InvalidOperationException("Bootstrap refused: users already exist.");
     var admin = new User { Username = username, Role = "Admin" };
     admin.PasswordHash = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>().HashPassword(admin, password);
-    db.Users.Add(admin); await db.SaveChangesAsync(); await tx.CommitAsync();
+    scope.ServiceProvider.GetRequiredService<IUserRepository>().Add(admin);
+    await unitOfWork.SaveChangesAsync(default); await tx.CommitAsync(default);
     Console.WriteLine("Initial administrator created.");
     return;
 }

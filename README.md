@@ -57,7 +57,7 @@ session; the other views use the application's in-memory sample workspace.
 | Frontend | React, TypeScript, Vite, Lucide icons, CSS |
 | API | .NET 10, ASP.NET Core, cookie authentication, antiforgery middleware |
 | Application | Use-case contracts, interfaces, DTOs, Mapster |
-| Persistence | PostgreSQL, EF Core, Npgsql, explicit migrations |
+| Persistence | PostgreSQL, EF Core, Npgsql, typed repositories, shared unit of work, explicit migrations |
 | Testing | xUnit, ASP.NET integration tests, PostgreSQL workflow/concurrency tests, Node test runner |
 | CI | GitHub Actions, isolated PostgreSQL 18 service, backend and frontend quality gates |
 
@@ -80,6 +80,11 @@ docs/                        Implementation book, branding and project guides
 Dependencies point inward: the domain has no dependency on HTTP, EF Core or
 React. Infrastructure implements application boundaries and is wired through
 dependency injection in the API host. Mapster maps DTOs, not business decisions.
+
+Database workflows use typed interfaces in `Aahar.Application/Persistence`
+and EF implementations in `Aahar.Infrastructure/Persistence`. They share one
+scoped unit of work; services explicitly save and commit coordinated changes.
+File-backed images and restaurant settings retain separate storage boundaries.
 
 Order submission, stock deduction and ticket creation are transactional.
 Payments settle the complete bill once. Monetary values use decimal arithmetic

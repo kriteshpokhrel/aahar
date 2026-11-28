@@ -2,17 +2,6 @@ using Aahar.Domain;
 
 namespace Aahar.Application;
 
-public interface IUnitOfWork
-{
-    Task<ITransaction> BeginSerializableAsync(CancellationToken ct);
-    Task<int> SaveChangesAsync(CancellationToken ct);
-}
-
-public interface ITransaction : IAsyncDisposable
-{
-    Task CommitAsync(CancellationToken ct);
-}
-
 public interface IGuestRequestRepository
 {
     Task<bool> TableExistsAsync(int id, CancellationToken ct);

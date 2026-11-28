@@ -66,12 +66,12 @@ public sealed class PasswordChangeTests
     public void ConcurrentChangeFilterMatchesOnlyOriginalUserAndHash()
     {
         var users = new[] { new User { Id = 1, PasswordHash = "old" }, new User { Id = 2, PasswordHash = "old" } };
-        Assert.Single(PasswordChange.UnchangedUser(users.AsQueryable(), 1, "old"));
+        Assert.Single(UserQueries.UnchangedUser(users.AsQueryable(), 1, "old"));
         users[0].PasswordHash = "changed";
-        Assert.Empty(PasswordChange.UnchangedUser(users.AsQueryable(), 1, "old"));
+        Assert.Empty(UserQueries.UnchangedUser(users.AsQueryable(), 1, "old"));
         using var db = new RestaurantDbContext(new DbContextOptionsBuilder<RestaurantDbContext>()
             .UseNpgsql("Host=localhost;Database=not_used;Username=unused;Password=unused").Options);
-        var sql = PasswordChange.UnchangedUser(db.Users, 1, "old").ToQueryString();
+        var sql = UserQueries.UnchangedUser(db.Users, 1, "old").ToQueryString();
         Assert.Contains("\"Id\"", sql);
         Assert.Contains("\"PasswordHash\"", sql);
     }
@@ -130,6 +130,76 @@ public sealed class PasswordChangeTests
     }
 
     private record Csrf(string RequestToken);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    public async Task ConditionalPasswordWriteCommitsOnlyWhenOriginalHashMatches(int updated)
+    {
+        var hasher = new PasswordHasher<User>();
+        var user = new User { Id = 1, Username = "synthetic" };
+        user.PasswordHash = hasher.HashPassword(user, new string('a', 12));
+        var events = new List<string>();
+        var repository = new PasswordRepository(user, events, updated);
+        var service = new PasswordChangeService(repository, new PasswordUnitOfWork(events), hasher);
+        var request = new ChangePasswordRequest { CurrentPassword = new string('a', 12), NewPassword = new string('b', 12) };
+
+        if (updated == 1) await service.ChangeAsync(user.Username, request, default);
+        else await Assert.ThrowsAsync<ConflictException>(() => service.ChangeAsync(user.Username, request, default));
+
+        Assert.Equal(updated == 1 ? new[] { "begin", "update", "commit", "dispose" } : new[] { "begin", "update", "dispose" }, events);
+        Assert.Equal(user.PasswordHash, repository.ExpectedHash);
+        Assert.NotEqual(PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(user, repository.ReplacementHash!, request.NewPassword));
+    }
+
+    [Fact]
+    public async Task InvalidCurrentPasswordDoesNotStartTransactionOrWrite()
+    {
+        var user = new User { Id = 1, Username = "synthetic" };
+        var hasher = new PasswordHasher<User>();
+        user.PasswordHash = hasher.HashPassword(user, new string('a', 12));
+        var events = new List<string>();
+        var repository = new PasswordRepository(user, events, 1);
+        var service = new PasswordChangeService(repository, new PasswordUnitOfWork(events), hasher);
+
+        await Assert.ThrowsAsync<DomainException>(() => service.ChangeAsync(user.Username,
+            new() { CurrentPassword = "wrong", NewPassword = new string('b', 12) }, default));
+        Assert.Empty(events);
+        Assert.Null(repository.ReplacementHash);
+    }
+
+    private sealed class PasswordRepository(User user, List<string> events, int updated) : IUserRepository
+    {
+        public string? ExpectedHash { get; private set; }
+        public string? ReplacementHash { get; private set; }
+        public Task<User?> FindForPasswordChangeAsync(string username, CancellationToken ct) => Task.FromResult<User?>(user);
+        public Task<User?> FindByUsernameAsync(string username, CancellationToken ct) => throw new NotSupportedException();
+        public void Add(User value) => throw new NotSupportedException();
+        public Task<int> ChangePasswordIfUnchangedAsync(int id, string oldHash, string newHash, CancellationToken ct)
+        {
+            Assert.Equal(user.Id, id);
+            ExpectedHash = oldHash;
+            ReplacementHash = newHash;
+            events.Add("update");
+            return Task.FromResult(updated);
+        }
+    }
+
+    private sealed class PasswordUnitOfWork(List<string> events) : IUnitOfWork
+    {
+        public Task<int> SaveChangesAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<ITransaction> BeginSerializableAsync(CancellationToken ct)
+        {
+            events.Add("begin");
+            return Task.FromResult<ITransaction>(new PasswordTransaction(events));
+        }
+        private sealed class PasswordTransaction(List<string> events) : ITransaction
+        {
+            public Task CommitAsync(CancellationToken ct) { events.Add("commit"); return Task.CompletedTask; }
+            public ValueTask DisposeAsync() { events.Add("dispose"); return ValueTask.CompletedTask; }
+        }
+    }
 
     private sealed class FakePasswordChangeService : IPasswordChangeService
     {

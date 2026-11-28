@@ -1,6 +1,5 @@
 using Aahar.Application;
 using Aahar.Domain;
-using Microsoft.EntityFrameworkCore;
 using SkiaSharp;
 
 namespace Aahar.Infrastructure;
@@ -77,25 +76,25 @@ public sealed class MenuImageStore
     }
 }
 
-public sealed class MenuImageService(RestaurantDbContext db, MenuImageStore store) : IMenuImageService
+public sealed class MenuImageService(IMenuRepository repository, MenuImageStore store) : IMenuImageService
 {
     public async Task<byte[]?> GetAsync(int id, bool authenticated, CancellationToken ct)
     {
-        if (id <= 0 || !await db.MenuItems.AsNoTracking().AnyAsync(x => x.Id == id && (authenticated || x.IsAvailable), ct))
+        if (id <= 0 || !await repository.ExistsAsync(id, !authenticated, ct))
             return null;
         return await store.ReadAsync(id, ct);
     }
 
     public async Task<bool> PutAsync(int id, string contentType, Stream data, CancellationToken ct)
     {
-        if (id <= 0 || !await db.MenuItems.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return false;
+        if (id <= 0 || !await repository.ExistsAsync(id, false, ct)) return false;
         await store.WriteAsync(id, contentType, data, ct);
         return true;
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken ct)
     {
-        if (id <= 0 || !await db.MenuItems.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return false;
+        if (id <= 0 || !await repository.ExistsAsync(id, false, ct)) return false;
         store.Delete(id);
         return true;
     }

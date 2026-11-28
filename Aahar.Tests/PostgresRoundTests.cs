@@ -19,6 +19,10 @@ public sealed class OptInRoundsFactAttribute : FactAttribute
 [Collection("PostgreSQL")]
 public class PostgresRoundTests
 {
+    private static RestaurantService Service(RestaurantDbContext db) =>
+        new(new MenuRepository(db), new OrderRepository(db), new InventoryRepository(db),
+            new UserRepository(db), new EfUnitOfWork(db), new PasswordHasher<User>());
+
     [OptInRoundsFact]
     public async Task CancellationRacingRoundReturnsAllCommittedStockExactlyOnce()
     {
@@ -37,7 +41,7 @@ public class PostgresRoundTests
             await db.SaveChangesAsync();
             menuId = menu.Id;
             ingredientId = ingredient.Id;
-            var service = new RestaurantService(db, new PasswordHasher<User>());
+            var service = Service(db);
             orderId = (await service.CreateOrderAsync(new(null, [new(menuId, 1)]), default)).Id;
             await service.SendOrderAsync(orderId, "test", default);
         }
@@ -45,7 +49,7 @@ public class PostgresRoundTests
         async Task Attempt(Func<RestaurantService, Task> action)
         {
             await using var db = new RestaurantDbContext(options);
-            try { await action(new RestaurantService(db, new PasswordHasher<User>())); }
+            try { await action(Service(db)); }
             catch (DomainException) { }
             catch (Exception e) when (DatabaseConflicts.IsConflict(e)) { }
         }
@@ -56,7 +60,7 @@ public class PostgresRoundTests
         await using (var db = new RestaurantDbContext(options))
         {
             if ((await db.Orders.AsNoTracking().SingleAsync(x => x.Id == orderId)).Status != "Cancelled")
-                await new RestaurantService(db, new PasswordHasher<User>()).CancelOrderAsync(orderId, new("cancel", "Return"), "test", "Manager", default);
+                await Service(db).CancelOrderAsync(orderId, new("cancel", "Return"), "test", "Manager", default);
         }
         await using var verify = new RestaurantDbContext(options);
         var order = await verify.Orders.Include(x => x.Tickets).SingleAsync(x => x.Id == orderId);
@@ -84,7 +88,7 @@ public class PostgresRoundTests
             db.MenuItems.Add(menu);
             await db.SaveChangesAsync();
             menuId = menu.Id;
-            var service = new RestaurantService(db, new PasswordHasher<User>());
+            var service = Service(db);
             orderId = (await service.CreateOrderAsync(new(null, [new(menuId, 1)]), default)).Id;
             await service.SendOrderAsync(orderId, "test", default);
             var ticket = (await service.KitchenTicketsAsync(default)).Single(x => x.OrderId == orderId);
@@ -95,7 +99,7 @@ public class PostgresRoundTests
         async Task Attempt(Func<RestaurantService, Task> action)
         {
             await using var db = new RestaurantDbContext(options);
-            try { await action(new RestaurantService(db, new PasswordHasher<User>())); }
+            try { await action(Service(db)); }
             catch (DomainException) { }
             catch (Exception e) when (DatabaseConflicts.IsConflict(e)) { }
         }
@@ -140,7 +144,6 @@ public class PostgresRoundTests
             menuId = menu.Id;
             ingredientId = ingredient.Id;
         }
-        static RestaurantService Service(RestaurantDbContext db) => new(db, new PasswordHasher<User>());
         int orderId;
         await using (var db = new RestaurantDbContext(options))
         {

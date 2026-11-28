@@ -1,10 +1,8 @@
 using Aahar.Application;
-using Aahar.Domain;
 using Microsoft.EntityFrameworkCore;
+using Aahar.Domain;
 
 namespace Aahar.Infrastructure;
-
-public record PaidSalesTotals(long OrdersPaid, decimal Total);
 
 public static class ReportQueries
 {
@@ -23,21 +21,10 @@ public static class ReportQueries
             .Select(x => new BestSellingItemDto(x.MenuItemId, x.Name, x.UnitPrice, x.Quantity, x.Revenue));
 }
 
-public sealed class ReportService(RestaurantDbContext db, TimeZoneInfo businessTimeZone) : IReportService
+public sealed class ReportRepository(RestaurantDbContext db) : IReportRepository
 {
-    public async Task<PaidSalesReport> PaidSalesAsync(DateOnly? fromDate, DateOnly? toDate, CancellationToken ct)
-    {
-        var range = BusinessDateRange.Create(fromDate, toDate, businessTimeZone);
-        var totals = await ReportQueries.PaidSales(db.Payments.AsNoTracking(), range).SingleOrDefaultAsync(ct);
-        return new PaidSalesReport(range.FromDate, range.ToDate, range.TimeZone, range.FromUtc, range.ToUtcExclusive,
-            totals?.OrdersPaid ?? 0, totals?.Total ?? 0m);
-    }
-
-    public async Task<BestSellingReport> BestSellingAsync(DateOnly? fromDate, DateOnly? toDate, int limit, CancellationToken ct)
-    {
-        var range = BusinessDateRange.Create(fromDate, toDate, businessTimeZone);
-        if (limit is < 1 or > 100) throw new DomainException("Limit must be between 1 and 100.");
-        var items = await ReportQueries.BestSelling(db.Set<OrderItem>().AsNoTracking(), range, limit).ToListAsync(ct);
-        return new BestSellingReport(range.FromDate, range.ToDate, range.TimeZone, range.FromUtc, range.ToUtcExclusive, items);
-    }
+    public Task<PaidSalesTotals?> PaidSalesAsync(BusinessDateRange range, CancellationToken ct) =>
+        ReportQueries.PaidSales(db.Payments.AsNoTracking(), range).SingleOrDefaultAsync(ct);
+    public Task<List<BestSellingItemDto>> BestSellingAsync(BusinessDateRange range, int limit, CancellationToken ct) =>
+        ReportQueries.BestSelling(db.Set<OrderItem>().AsNoTracking(), range, limit).ToListAsync(ct);
 }
