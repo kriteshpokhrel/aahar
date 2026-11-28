@@ -40,8 +40,8 @@ context, generic repository and unit of work. A .NET 10/PostgreSQL backend
 foundation has since been added; its precise scope and unverified behavior are
 listed in [backend setup and limitations](../Aahar-API/BACKEND.md). It is not
 the finished product. The machine initially exposed .NET 6 and 7 SDKs; .NET 10
-was installed into this session's tool directory. The old SQL Server scaffold
-is excluded from compilation, and its data is not migrated.
+was installed into this session's tool directory. The unused old SQL Server
+scaffold has been removed, and its data is not migrated.
 
 ### Current implementation
 
@@ -64,8 +64,9 @@ sample service and mocked legacy-API checks covered layout, capability gating
 and saved-draft auto-send failure. A long receipt produced an isolated,
 multi-page 80 mm PDF. These checks do not establish full live staff end-to-end
 coverage, physical printer compatibility or accessibility compliance.
-Multi-round backend source and its offline-reviewed migrations are integrated,
-but the local schema upgrade and PostgreSQL round/race tests remain unexecuted.
+Multi-round backend source and its offline-reviewed migrations are integrated.
+PostgreSQL workflow and round/race tests pass against a disposable CI database,
+but the existing local database has not been upgraded.
 
 Shared restaurant settings now have an Admin-only editing screen and a public
 business profile for the guest menu, workspace and receipts. This is an

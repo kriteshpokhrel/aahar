@@ -16,6 +16,7 @@ public sealed class OptInRoundsFactAttribute : FactAttribute
     }
 }
 
+[Collection("PostgreSQL")]
 public class PostgresRoundTests
 {
     [OptInRoundsFact]
@@ -46,9 +47,7 @@ public class PostgresRoundTests
             await using var db = new RestaurantDbContext(options);
             try { await action(new RestaurantService(db, new PasswordHasher<User>())); }
             catch (DomainException) { }
-            catch (DbUpdateConcurrencyException) { }
-            catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: "23505" or "40001" or "40P01" }) { }
-            catch (PostgresException e) when (e.SqlState is "40001" or "40P01") { }
+            catch (Exception e) when (DatabaseConflicts.IsConflict(e)) { }
         }
         await Task.WhenAll(
             Attempt(async service => { await service.CancelOrderAsync(orderId, new("cancel", "Return"), "test", "Manager", default); }),
@@ -98,9 +97,7 @@ public class PostgresRoundTests
             await using var db = new RestaurantDbContext(options);
             try { await action(new RestaurantService(db, new PasswordHasher<User>())); }
             catch (DomainException) { }
-            catch (DbUpdateConcurrencyException) { }
-            catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: "23505" or "40001" or "40P01" }) { }
-            catch (PostgresException e) when (e.SqlState is "40001" or "40P01") { }
+            catch (Exception e) when (DatabaseConflicts.IsConflict(e)) { }
         }
         await Task.WhenAll(
             Attempt(async service => { await service.PayAsync(orderId, new("Cash"), default); }),
@@ -157,9 +154,7 @@ public class PostgresRoundTests
         {
             await using var db = new RestaurantDbContext(options);
             try { await Service(db).AddRoundAsync(orderId, request, "test", default); }
-            catch (DbUpdateConcurrencyException) { }
-            catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: "23505" or "40001" or "40P01" }) { }
-            catch (PostgresException e) when (e.SqlState is "40001" or "40P01") { }
+            catch (Exception e) when (DatabaseConflicts.IsConflict(e)) { }
         }
         await Task.WhenAll(Attempt(), Attempt());
         await using (var db = new RestaurantDbContext(options))

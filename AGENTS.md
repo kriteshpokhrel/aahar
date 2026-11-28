@@ -38,7 +38,7 @@ product behavior; distinguish planned capabilities from implemented ones.
 ## Current baseline
 
 The .NET 10 backend foundation uses PostgreSQL, cookie authentication, EF Core
-and Mapster. The older SQL Server scaffold is retained but excluded from
-compilation. Consult [backend setup and limitations](Aahar-API/BACKEND.md):
+and Mapster. The unused older SQL Server scaffold has been removed; its data
+is not migrated. Consult [backend setup and limitations](Aahar-API/BACKEND.md):
 new-database migrations and selected PostgreSQL workflow and race tests have
 been verified; full end-to-end, upgrade and recovery coverage remains incomplete.

@@ -24,6 +24,7 @@ public sealed class PostgresFactAttribute : FactAttribute
     }
 }
 
+[Collection("PostgreSQL")]
 public class PostgresWorkflowTests
 {
     [PostgresFact]

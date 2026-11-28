@@ -1,6 +1,6 @@
 # Aahar backend
 
-Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Core, Mapster, cookie authentication, and antiforgery. `Aahar.Domain` holds entities and rules; `Aahar.Application` defines contracts; `Aahar.Infrastructure` implements persistence and services; `Aahar-API` is the HTTP host. The original SQL Server scaffold under `Aahar-API/Data`, `Models`, and `Repository` is retained for reference but excluded from compilation.
+Single-restaurant, localhost-only portfolio backend: .NET 10, PostgreSQL, EF Core, Mapster, cookie authentication, and antiforgery. `Aahar.Domain` holds entities and rules; `Aahar.Application` defines contracts; `Aahar.Infrastructure` implements persistence and services; `Aahar-API` is the HTTP host. The unused original SQL Server scaffold was removed; its data is not migrated.
 
 See [architecture](ARCHITECTURE.md), [security assumptions](SECURITY.md), and [operations and recovery](OPERATIONS.md) for design and operator guidance.
 
@@ -20,7 +20,7 @@ With .NET 10 installed and a dedicated database already created by its owner, co
 read -r -s -p 'Dedicated PostgreSQL connection string: ' ConnectionStrings__Aahar; echo
 export ConnectionStrings__Aahar
 dotnet restore Aahar-API.slnx
-dotnet tool install --global dotnet-ef --version 10.0.0
+dotnet tool restore
 dotnet ef migrations script --project Aahar.Infrastructure --startup-project Aahar.Infrastructure --context RestaurantDbContext --output aahar-migrations.sql
 ```
 
@@ -92,6 +92,10 @@ this independent profile feature does not.
 ## HTTP contract
 
 JSON is camelCase. Successful creation and updates return 200 unless stated otherwise. Errors are generally Problem Details with 400 for invalid operations or CSRF, 409 for uniqueness/serialization conflicts, 401/403 for authentication/authorization, and 429 for login throttling. Retry a 409 only after refreshing state.
+
+PostgreSQL uniqueness, serialization and deadlock conflicts remain 409 even
+when EF wraps the underlying database exception. Other storage failures are
+not mislabeled as conflicts and remain server errors.
 
 All calls use same-origin credentials. `GET /api/auth/csrf` returns `{requestToken}` and sets an HttpOnly, Secure, SameSite=Strict antiforgery cookie. Send that token as `X-CSRF-TOKEN` on every POST, PUT, PATCH, and DELETE, including login. `POST /api/auth/login` takes `{username,password}` and returns `{username,role}` with an HttpOnly, Secure, SameSite=Strict auth cookie. Get a fresh CSRF token after login. `GET /api/auth/me` returns the same user shape; `POST /api/auth/logout` returns 204 and clears the auth cookie. Fetch a fresh token before another login. Unauthenticated requests do not redirect. Roles are `Admin`, `Manager`, `Staff`, and `Kitchen`; an Admin can `POST /api/users` with `{username,password,role}`.
 

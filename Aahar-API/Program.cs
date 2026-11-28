@@ -10,13 +10,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<RestaurantDbContext>((services, options) => options.UseNpgsql(
     services.GetRequiredService<IConfiguration>().GetConnectionString("Aahar")
     ?? throw new InvalidOperationException("Set ConnectionStrings__Aahar to the dedicated PostgreSQL database connection string.")));
 builder.Services.AddScoped<IRestaurantService, RestaurantService>();
+builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+builder.Services.AddScoped<IGuestRequestRepository, GuestRequestRepository>();
 builder.Services.AddScoped<IGuestRequestService, GuestRequestService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPasswordChangeService, PasswordChangeService>();
@@ -144,8 +145,7 @@ app.Use(async (context, next) =>
     {
         await Results.Problem(statusCode: 409, title: "Conflict", detail: "The record changed. Refresh and retry.").ExecuteAsync(context);
     }
-    catch (Exception ex) when (ex is DbUpdateException { InnerException: PostgresException { SqlState: "23505" or "40001" or "40P01" } }
-        or PostgresException { SqlState: "40001" or "40P01" })
+    catch (Exception ex) when (DatabaseConflicts.IsConflict(ex))
     {
         await Results.Problem(statusCode: 409, title: "Conflict", detail: "The operation conflicted with another change or an existing record. Refresh and retry.").ExecuteAsync(context);
     }
